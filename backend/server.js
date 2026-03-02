@@ -101,61 +101,6 @@ async function startServer() {
     });
   });
 
-  // Database initialization endpoint
-  app.post('/api/admin/init-database', requireAuth, async (req, res) => {
-    try {
-      const credential = new DefaultAzureCredential();
-      const client = new CosmosClient({
-        endpoint: config.cosmosDbEndpoint,
-        aadCredentials: credential
-      });
-
-      // Create database if it doesn't exist
-      const { database } = await client.databases.createIfNotExists({
-        id: DATABASE_NAME
-      });
-
-      // Create container if it doesn't exist
-      const { container: newContainer } = await database.containers.createIfNotExists({
-        id: CONTAINER_NAME,
-        partitionKey: {
-          paths: ['/userId']
-        }
-      });
-
-      // Optionally seed bookmarks for the current user
-      const userId = req.user.sub;
-      let seeded = false;
-
-      if (req.body.bookmarks) {
-        const bookmarksDoc = {
-          id: `bookmarks_${userId}`,
-          userId,
-          type: 'bookmarks',
-          bookmarks: req.body.bookmarks,
-          updatedAt: new Date().toISOString()
-        };
-        await newContainer.items.upsert(bookmarksDoc);
-        seeded = true;
-      }
-
-      res.json({
-        success: true,
-        message: 'Database initialized successfully',
-        database: DATABASE_NAME,
-        container: CONTAINER_NAME,
-        seeded
-      });
-    } catch (error) {
-      console.error('Error initializing database:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to initialize database',
-        message: error.message
-      });
-    }
-  });
-
   // Get bookmarks for the authenticated user
   app.get('/api/bookmarks', requireAuth, async (req, res) => {
     try {
