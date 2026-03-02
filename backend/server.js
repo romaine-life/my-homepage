@@ -117,10 +117,13 @@ async function startServer() {
       const { resources } = await container.items.query(querySpec).fetchAll();
 
       if (resources.length === 0) {
-        return res.json({ bookmarks: [] });
+        return res.json({ bookmarks: [], updatedAt: null });
       }
 
-      res.json({ bookmarks: resources[0].bookmarks });
+      res.json({
+        bookmarks: resources[0].bookmarks,
+        updatedAt: resources[0].updatedAt
+      });
     } catch (error) {
       console.error('Error fetching bookmarks:', error);
       res.status(500).json({ error: 'Failed to fetch bookmarks', message: error.message });
@@ -131,10 +134,39 @@ async function startServer() {
   app.put('/api/bookmarks', requireAuth, async (req, res) => {
     try {
       const userId = req.user.sub;
-      const { bookmarks } = req.body;
+      const { bookmarks, lastKnownVersion } = req.body;
 
       if (!Array.isArray(bookmarks)) {
         return res.status(400).json({ error: 'Request body must contain a bookmarks array' });
+      }
+
+      // Conflict detection: check if server data has changed since client last fetched
+      if (lastKnownVersion) {
+        const querySpec = {
+          query: 'SELECT * FROM c WHERE c.type = @type AND c.userId = @userId',
+          parameters: [
+            { name: '@type', value: 'bookmarks' },
+            { name: '@userId', value: userId }
+          ]
+        };
+
+        const { resources } = await container.items.query(querySpec).fetchAll();
+
+        if (resources.length > 0) {
+          const currentDoc = resources[0];
+          const currentVersion = new Date(currentDoc.updatedAt).getTime();
+          const clientVersion = new Date(lastKnownVersion).getTime();
+
+          // Conflict: server has newer data than what client last saw
+          if (currentVersion > clientVersion) {
+            return res.status(409).json({
+              error: 'Conflict detected',
+              message: 'Bookmarks have been modified elsewhere. Please merge changes.',
+              currentBookmarks: currentDoc.bookmarks,
+              currentVersion: currentDoc.updatedAt
+            });
+          }
+        }
       }
 
       const bookmarksDoc = {
