@@ -1,0 +1,13 @@
+name: Generate Local .env Files
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  call-generate-env-template:
+    uses: nelsong6/pipeline-templates/.github/workflows/generate-local-env-template.yml@main
+    secrets: inherit

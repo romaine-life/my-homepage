@@ -1,0 +1,755 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", monospace;
+  font-size: 18px;
+  padding: 32px;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+#toolbar {
+  max-width: 720px;
+  margin-bottom: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+#toolbar button {
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-family: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#toolbar button:hover {
+  background: #45475a;
+}
+
+#tree {
+  max-width: 720px;
+}
+
+/* ── Each node row ─────────────────────────────── */
+
+.node {
+  display: flex;
+  align-items: baseline;
+  position: relative;
+}
+
+.node.clickable {
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.node.clickable:hover {
+  background: #2a2a3e;
+}
+
+.node.clickable:hover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(var(--highlight-end, 0ch), calc(100vw - 64px));
+  background: #2a2a3e;
+  z-index: -1;
+}
+
+.node-prefix {
+  white-space: pre;
+  color: #585b70;
+  user-select: none;
+}
+
+.node-dash {
+  white-space: pre;
+  color: #585b70;
+  user-select: none;
+}
+
+.node-label a {
+  color: #89b4fa;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.node-label a:hover {
+  color: #b4befe;
+  text-decoration: underline;
+}
+
+.link-indicator {
+  color: #585b70;
+  font-size: 0.75em;
+  margin-left: 0.4ch;
+  transition: color 0.15s;
+}
+
+.node.clickable:hover .link-indicator,
+.node-label a:hover + .link-indicator {
+  color: #b4befe;
+}
+
+.node-label.folder {
+  color: #a6e3a1;
+  font-weight: bold;
+}
+
+.node-label.folder a {
+  color: #a6e3a1;
+}
+
+.node-label.folder a:hover {
+  color: #b4befe;
+}
+
+/* ── Hover URL hint ───────────────────────────── */
+
+.node-url {
+  display: none;
+  position: absolute;
+  left: var(--url-left);
+  color: #585b70;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.node:hover > .node-url {
+  display: inline;
+}
+
+/* ── Children container ────────────────────────── */
+
+.children {
+  display: none;
+}
+
+.children.open {
+  display: block;
+}
+
+/* ── Empty state ─────────────────────────────── */
+
+.empty-state {
+  color: #a6adc8;
+  padding: 12px 0;
+}
+
+/* ── API error banner ────────────────────────── */
+
+#api-error {
+  max-width: 720px;
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  background: #2a2030;
+  color: #f38ba8;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  font-size: 0.8em;
+}
+
+/* ── Hidden utility ──────────────────────────── */
+
+.hidden {
+  display: none !important;
+}
+
+/* ── Loading state ───────────────────────────── */
+
+#loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 80vh;
+  color: #585b70;
+  font-size: 1.2em;
+}
+
+/* ── Account widget (top-right) ──────────────── */
+
+#user-bar {
+  position: relative;
+  z-index: 100;
+  margin-bottom: 12px;
+  width: fit-content;
+}
+
+#user-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #585b70;
+  font-family: inherit;
+  font-size: 0.75em;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+#user-btn:hover {
+  color: #cdd6f4;
+  background: #313244;
+  border-color: #45475a;
+}
+
+#user-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+}
+
+#user-email {
+  color: inherit;
+}
+
+.user-chevron {
+  display: none;
+}
+
+/* ── Account dropdown ────────────────────────── */
+
+#account-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Provider picker (inside dropdown) ──────── */
+
+#login-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  height: 32px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.login-provider svg {
+  flex-shrink: 0;
+}
+
+.login-provider:hover {
+  filter: brightness(1.12);
+}
+
+.login-provider[data-provider="github"] {
+  background: #24292e;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+.login-provider[data-provider="google"] {
+  background: #fff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+  font-family: "Roboto", Arial, sans-serif;
+  font-weight: 500;
+}
+
+.login-provider[data-provider="microsoft"] {
+  background: #2f2f2f;
+  color: #fff;
+  font-family: "Segoe UI", sans-serif;
+  font-weight: 600;
+  border: 1px solid #8c8c8c;
+}
+
+.login-provider[data-provider="apple"] {
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  border-radius: 6px;
+}
+
+/* ── Logout button (inside dropdown) ─────────── */
+
+#logout-btn {
+  width: 100%;
+  background: none;
+  color: #585b70;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+#logout-btn:hover {
+  color: #f38ba8;
+  border-color: #f38ba8;
+}
+
+/* ── Login separator + local login form ──────── */
+
+.login-separator {
+  text-align: center;
+  color: #585b70;
+  font-size: 0.75em;
+  margin: 6px 0;
+}
+
+#local-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#local-login-form input {
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  width: 100%;
+}
+
+#local-login-form input:focus {
+  outline: none;
+  border-color: #89b4fa;
+}
+
+.local-login-btn {
+  background: #313244 !important;
+  color: #cdd6f4 !important;
+  border: 1px solid #45475a !important;
+  font-family: inherit !important;
+  justify-content: center;
+}
+
+#local-login-error {
+  color: #f38ba8;
+  font-size: 11px;
+}
+
+/* ── Profile picture section ────────────────── */
+
+#profile-section {
+  border-top: 1px solid #45475a;
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+#profile-picture-section {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.profile-picture-label {
+  display: inline-block;
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.profile-picture-label:hover {
+  background: #45475a;
+}
+
+#remove-picture-btn {
+  background: none;
+  color: #585b70;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+#remove-picture-btn:hover {
+  color: #f38ba8;
+  border-color: #f38ba8;
+}
+
+/* ── Display toggle section ─────────────────── */
+
+#display-toggle-section {
+  border-top: 1px solid #45475a;
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+#display-toggle-btn {
+  width: 100%;
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#display-toggle-btn:hover {
+  background: #45475a;
+}
+
+/* ── Admin section ──────────────────────────── */
+
+#admin-section {
+  border-top: 1px solid #45475a;
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.admin-header {
+  color: #585b70;
+  font-size: 11px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#create-account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#create-account-form input {
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  width: 100%;
+}
+
+#create-account-form input:focus {
+  outline: none;
+  border-color: #89b4fa;
+}
+
+#create-account-form button {
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#create-account-form button:hover {
+  background: #45475a;
+}
+
+.create-msg-success {
+  color: #a6e3a1;
+  font-size: 11px;
+}
+
+.create-msg-error {
+  color: #f38ba8;
+  font-size: 11px;
+}
+
+/* ── Edit mode ───────────────────────────────── */
+
+#save-btn {
+  background: #a6e3a1;
+  color: #1e1e2e;
+  border: 1px solid #a6e3a1;
+  font-weight: bold;
+}
+
+#save-btn:hover {
+  background: #94e2d5;
+}
+
+#cancel-btn {
+  background: #f38ba8;
+  color: #1e1e2e;
+  border: 1px solid #f38ba8;
+  font-weight: bold;
+}
+
+#cancel-btn:hover {
+  background: #eba0ac;
+}
+
+.edit-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 1ch;
+}
+
+.edit-actions button {
+  background: none;
+  border: none;
+  color: #585b70;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85em;
+  padding: 0 3px;
+  transition: color 0.15s;
+}
+
+.edit-actions button:hover {
+  color: #cdd6f4;
+}
+
+.edit-actions button.action-delete:hover {
+  color: #f38ba8;
+}
+
+.edit-actions button.action-add:hover {
+  color: #a6e3a1;
+}
+
+.node-edit-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.node-edit-form input {
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.node-edit-form input:focus {
+  outline: none;
+  border-color: #89b4fa;
+}
+
+.node-edit-form input.edit-name {
+  width: 20ch;
+}
+
+.node-edit-form input.edit-url {
+  width: 30ch;
+}
+
+.node-edit-form button {
+  background: none;
+  border: none;
+  color: #585b70;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0 3px;
+  transition: color 0.15s;
+}
+
+.node-edit-form button.edit-confirm:hover {
+  color: #a6e3a1;
+}
+
+.node-edit-form button.edit-cancel:hover {
+  color: #f38ba8;
+}
+
+.add-root-btn {
+  background: none;
+  border: 1px dashed #45475a;
+  border-radius: 4px;
+  color: #585b70;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 4px 12px;
+  margin-top: 8px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.add-root-btn:hover {
+  color: #a6e3a1;
+  border-color: #a6e3a1;
+}
+
+/* ── Drag handle ─────────────────────────────── */
+
+.drag-handle {
+  cursor: grab;
+  color: #45475a;
+  user-select: none;
+  padding: 0 6px 0 0;
+  font-size: 0.75em;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.drag-handle:hover {
+  color: #cdd6f4;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.node.dragging {
+  opacity: 0.3;
+}
+
+.node.drag-over-top {
+  box-shadow: inset 0 2px 0 #89b4fa;
+}
+
+.node.drag-over-bottom {
+  box-shadow: inset 0 -2px 0 #89b4fa;
+}
+
+.edit-mode .node.clickable {
+  cursor: default;
+}
+
+.edit-mode .node-url {
+  display: none !important;
+}
+
+.edit-mode .node-label a {
+  pointer-events: none;
+  color: #89b4fa;
+  text-decoration: none;
+}
+
+/* ── Inline YAML editor (inside #tree) ──────── */
+
+#tree:has(.yaml-editor) {
+  max-width: none;
+}
+
+.yaml-editor {
+  width: 720px;
+  min-width: 300px;
+  height: 60vh;
+  min-height: 200px;
+  resize: both;
+  overflow: auto;
+  transition: box-shadow 0.15s;
+}
+
+.yaml-editor.valid {
+  box-shadow: inset 2px 0 0 #a6e3a1;
+}
+
+.yaml-editor.invalid {
+  box-shadow: inset 2px 0 0 #f38ba8;
+}
+
+
+/* ── Cold-start loading indicator ──────────── */
+
+.login-provider.provider-loading {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: default;
+}
+
+#loading-dots {
+  color: #585b70;
+  font-size: 0.8em;
+  min-width: 3ch;
+  display: inline-block;
+}
+
+/* ── Local dev badge ─────────────────────────── */
+
+#local-badge {
+  position: fixed;
+  bottom: 6px;
+  left: 6px;
+  font-size: 0.55em;
+  color: #585b70;
+  letter-spacing: 0.1em;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ── Mobile responsive ───────────────────────── */
+
+@media (max-width: 600px) {
+  body {
+    padding: 12px;
+    font-size: 15px;
+  }
+
+  #toolbar {
+    flex-wrap: wrap;
+  }
+
+  #user-bar {
+    margin-bottom: 8px;
+  }
+
+  #user-btn {
+    padding: 6px 8px;
+  }
+
+  #user-avatar {
+    width: 36px;
+    height: 36px;
+  }
+
+  #tree {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .node-url {
+    display: none !important;
+  }
+}

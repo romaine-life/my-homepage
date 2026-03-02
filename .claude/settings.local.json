@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(xargs:*)",
+      "Bash(Select-String -Pattern \"image|IMAGE_NAME|containerapp update\")",
+      "Read(//d/Repositories/kill-me/backend/middleware/**)",
+      "Read(//d/Repositories/kill-me/backend/**)",
+      "Read(//d/Repositories/kill-me/tofu/**)",
+      "Bash(ConvertFrom-Json)",
+      "Bash(Select-Object -ExpandProperty login)",
+      "Read(//c/Users/upstairspc/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin/**)",
+      "Bash(gcloud iam workload-identity-pools providers update-oidc:*)",
+      "Bash(gcloud.cmd iam workload-identity-pools providers update-oidc:*)",
+      "Bash(powershell.exe -Command \"gcloud iam workload-identity-pools providers update-oidc spacelift-oidc --workload-identity-pool=spacelift-pool --location=global --issuer-uri=''https://nelsong6.app.us.spacelift.io'' --project=balmy-runner-487022-p9\")",
+      "Bash(powershell.exe:*)",
+      "Bash(Remove-Item \"D:\\\\repos\\\\infra-bootstrap\\\\.github\\\\workflows\\\\tofu-lockfile.yml\")",
+      "Bash(for id in 22550504545 22548026630 22528010335 22527397226 22520279914 22513022553 22511860179 22511507834 22511300953 22495870488 22476931297 22470219039)",
+      "Bash(do gh run cancel $id --repo nelsong6/infra-bootstrap)",
+      "Bash(done)",
+      "Bash(ls:*)"
+    ],
+    "additionalDirectories": [
+      "D:\\Repositories\\infra-bootstrap\\bootstrap"
+    ]
+  }
+}

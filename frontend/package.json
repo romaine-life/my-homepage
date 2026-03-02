@@ -1,0 +1,13 @@
+{
+  "name": "my-homepage-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "My Homepage Frontend",
+  "scripts": {
+    "dev": "serve . -l 5500",
+    "start": "serve ."
+  },
+  "devDependencies": {
+    "serve": "^14.2.0"
+  }
+}

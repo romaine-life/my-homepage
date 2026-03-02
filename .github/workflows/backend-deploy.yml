@@ -1,0 +1,74 @@
+name: Phase 3 - CD Deploy Backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/homepage-api
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend API
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install spacectl
+        uses: spacelift-io/setup-spacectl@v1
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+      - name: Fetch Spacelift Credentials from Key Vault
+        run: |
+          KV_ID=$(az keyvault secret show --vault-name "${{ vars.KEY_VAULT_NAME }}" --name spacelift-api-key-id --query value -o tsv | tr -d '\r\n')
+          echo "::add-mask::$KV_ID"
+          echo "SPACELIFT_API_KEY_ID=$KV_ID" >> $GITHUB_ENV
+
+          KV_SECRET=$(az keyvault secret show --vault-name "${{ vars.KEY_VAULT_NAME }}" --name spacelift-api-key-secret --query value -o tsv | tr -d '\r\n')
+          echo "::add-mask::$KV_SECRET"
+          echo "SPACELIFT_API_KEY_SECRET=$KV_SECRET" >> $GITHUB_ENV
+
+      - name: Fetch Backend Outputs
+        env:
+          SPACELIFT_API_KEY_ENDPOINT: 'https://nelsong6.app.us.spacelift.io'
+        run: |
+          APP_STACK_ID=${GITHUB_REPOSITORY#*/}
+
+          INFRA_OUTPUTS=$(spacectl stack outputs --id infra-bootstrap --output json)
+          echo "ACA_ENVIRONMENT_NAME=$(echo "$INFRA_OUTPUTS" | jq -r '.[] | select(.id == "container_app_environment_name") | .value | fromjson')" >> $GITHUB_ENV
+
+          APP_OUTPUTS=$(spacectl stack outputs --id "$APP_STACK_ID" --output json)
+          echo "CONTAINER_APP_NAME=$(echo "$APP_OUTPUTS" | jq -r '.[] | select(.id == "container_app_name") | .value | fromjson')" >> $GITHUB_ENV
+          echo "RESOURCE_GROUP_NAME=$(echo "$APP_OUTPUTS" | jq -r '.[] | select(.id == "resource_group_name") | .value | fromjson')" >> $GITHUB_ENV
+
+          RAW_URL=$(echo "$APP_OUTPUTS" | jq -r '.[] | select(.id == "backend_api_url") | .value | fromjson')
+          echo "BACKEND_HOSTNAME=${RAW_URL#https://}" >> $GITHUB_ENV
+
+      - name: Deploy to Container App
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.commit_sha }}
+
+      - name: Bind Custom Domain
+        run: |
+          az containerapp hostname bind \
+            --hostname ${{ env.BACKEND_HOSTNAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --environment ${{ env.ACA_ENVIRONMENT_NAME }} \
+            --validation-method CNAME

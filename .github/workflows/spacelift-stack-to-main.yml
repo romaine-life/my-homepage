@@ -1,0 +1,17 @@
+name: Reset Spacelift on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  reset-spacelift:
+    # Run if manually triggered OR if the PR was actually merged
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    uses: nelsong6/pipeline-templates/.github/workflows/spacelift-stack-to-main-template.yml@main
+    secrets: inherit
