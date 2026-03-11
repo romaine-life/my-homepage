@@ -93,3 +93,38 @@ import {
   to = azapi_resource.homepage_api_managed_cert
   id = "/subscriptions/${local._sub}/resourceGroups/${local._rg}/providers/Microsoft.App/managedEnvironments/infra-aca/managedCertificates/homepage-api-cert"
 }
+
+import {
+  to = azurerm_container_app_custom_domain.homepage_api
+  id = "/subscriptions/${local._sub}/resourceGroups/homepage-rg/providers/Microsoft.App/containerApps/homepage-api/customDomainName/homepage.api.romaine.life"
+}
+
+import {
+  to = azurerm_role_assignment.container_app_appconfig_reader
+  id = "/subscriptions/${local._sub}/resourceGroups/${local._rg}/providers/Microsoft.AppConfiguration/configurationStores/infra-appconfig/providers/Microsoft.Authorization/roleAssignments/f32bcf4e-0de5-4489-d5d5-c554a3337732"
+}
+
+import {
+  to = azurerm_role_assignment.container_app_keyvault_reader
+  id = "/subscriptions/${local._sub}/resourceGroups/${local._rg}/providers/Microsoft.KeyVault/vaults/romaine-kv/providers/Microsoft.Authorization/roleAssignments/3002bc4c-159a-8e77-71ed-76cc5ac4907f"
+}
+
+import {
+  to = azurerm_role_assignment.container_app_storage_contributor
+  id = "/subscriptions/${local._sub}/resourceGroups/homepage-rg/providers/Microsoft.Storage/storageAccounts/homepageprofilepics/providers/Microsoft.Authorization/roleAssignments/edc084ab-2357-57f5-650b-2cc37cb9a960"
+}
+
+import {
+  to = azurerm_cosmosdb_sql_role_assignment.container_app_cosmos
+  id = "/subscriptions/${local._sub}/resourceGroups/${local._rg}/providers/Microsoft.DocumentDB/databaseAccounts/infra-cosmos/sqlRoleAssignments/c03b8048-c9e5-5202-d893-450f70d73af8"
+}
+
+import {
+  to = auth0_client.backend_apple
+  id = "6tPJJIL6dqVY6Kt6fiA7ZKfQNuoifiiV"
+}
+
+import {
+  to = auth0_connection_clients.apple_backend
+  id = "con_DM1he2xMWnIQiVgg"
+}
