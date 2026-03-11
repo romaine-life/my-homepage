@@ -44,7 +44,7 @@ resource "azurerm_container_app" "homepage_api" {
 
       env {
         name  = "KEY_VAULT_URL"
-        value = "https://${var.key_vault_name}.vault.azure.net"
+        value = "https://${local.infra.key_vault_name}.vault.azure.net"
       }
 
       env {
