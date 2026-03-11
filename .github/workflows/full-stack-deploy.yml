@@ -49,10 +49,19 @@ jobs:
           tenant-id: ${{ vars.ARM_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
 
+      - name: Get Container App FQDN
+        id: container-fqdn
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "fqdn=$FQDN" >> $GITHUB_OUTPUT
+
       - name: Generate Config
         run: |
           export API_URL="https://homepage.api.romaine.life"
-          export API_BYPASS_URL="https://homepage-api.internal.infra-aca.westus2.azurecontainerapps.io"
+          export API_BYPASS_URL="https://${{ steps.container-fqdn.outputs.fqdn }}"
           chmod +x ./frontend/generate-config.sh
           ./frontend/generate-config.sh
 
