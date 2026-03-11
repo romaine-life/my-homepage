@@ -1,8 +1,10 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Phase 1 - CI Build"]
     branches: [main]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -15,10 +17,13 @@ env:
   CONTAINER_APP_NAME: homepage-api
   REGISTRY: ghcr.io
   IMAGE_NAME: nelsong6/my-homepage/homepage-api
+  # workflow_run uses the triggering workflow's SHA; workflow_dispatch uses the current SHA
+  TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   deploy-backend:
     name: Deploy Backend API
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Azure Login via OIDC
@@ -33,7 +38,7 @@ jobs:
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TARGET_SHA }}
 
   deploy-frontend:
     name: Deploy Frontend
@@ -41,6 +46,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
 
       - name: Azure Login via OIDC
         uses: azure/login@v2
