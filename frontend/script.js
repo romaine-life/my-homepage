@@ -301,6 +301,12 @@ async function fetchBookmarks() {
       });
     }
 
+    // Invalid/expired token — force re-login instead of showing stale data
+    if (res.status === 401) {
+      logout();
+      return [];
+    }
+
     if (!res.ok) throw new Error(`API error: ${res.status}`);
 
     const data = await res.json();
@@ -314,9 +320,11 @@ async function fetchBookmarks() {
     return bookmarks;
   } catch (err) {
     console.error("Failed to fetch bookmarks:", err);
-    showApiError(`Could not reach the API (${err.message})`);
-    // On network failure, return whatever we have cached
-    return loadCachedBookmarks() || [];
+    const cached = loadCachedBookmarks();
+    if (!cached) {
+      showApiError(`Could not reach the API (${err.message})`);
+    }
+    return cached || [];
   }
 }
 
@@ -346,6 +354,12 @@ async function putBookmarks(bookmarks) {
       },
       body: JSON.stringify(requestBody),
     });
+  }
+
+  // Invalid/expired token — force re-login
+  if (res.status === 401) {
+    logout();
+    return;
   }
 
   // Handle conflict (409) specially
@@ -959,6 +973,7 @@ function renderList(items, depth, parentArray) {
       row.classList.add("clickable");
       row.addEventListener("click", (e) => {
         if (editMode && e.target.closest(".edit-actions")) return;
+        if (editMode && e.target.closest(".node-edit-form")) return;
         if (e.target.closest("a") && !editMode) return;
         const isOpen = childrenContainer.classList.toggle("open");
         dash.textContent = isOpen ? "- " : "+ ";
@@ -1015,6 +1030,7 @@ function startInlineEdit(row, item, parentArray) {
   form.appendChild(cancelEditBtn);
 
   row.appendChild(form);
+  row.draggable = false;
   nameInput.focus();
   nameInput.select();
 
@@ -1028,11 +1044,13 @@ function startInlineEdit(row, item, parentArray) {
     } else {
       delete item.url;
     }
+    row.draggable = true;
     reRenderEdit();
   }
 
   function cancel() {
     form.remove();
+    row.draggable = true;
     if (label) label.classList.remove("hidden");
     if (actions) actions.classList.remove("hidden");
   }
