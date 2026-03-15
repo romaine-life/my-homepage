@@ -34,6 +34,11 @@ let dragAllowed = false;
 let dragState = null;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
 
+function ensureAbsoluteUrl(url) {
+  if (url && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) return "https://" + url;
+  return url;
+}
+
 const SAMPLE_BOOKMARKS = [
   {
     name: "Getting Started",
@@ -874,7 +879,7 @@ function renderList(items, depth, parentArray) {
     label.className = "node-label" + (hasChildren ? " folder" : "");
     if (item.url) {
       const a = document.createElement("a");
-      a.href = item.url;
+      a.href = ensureAbsoluteUrl(item.url);
       a.textContent = item.name;
       label.appendChild(a);
       const arrow = document.createElement("span");
@@ -984,7 +989,7 @@ function renderList(items, depth, parentArray) {
       row.classList.add("clickable");
       row.addEventListener("click", (e) => {
         if (e.target.tagName === "A") return;
-        window.location.href = item.url;
+        window.location.href = ensureAbsoluteUrl(item.url);
       });
     }
   });
