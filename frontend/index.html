@@ -103,6 +103,18 @@
     <div id="tree"></div>
   </div>
 
+  <!-- Fuzzy finder overlay -->
+  <div id="fzf-overlay" class="hidden">
+    <div id="fzf-container">
+      <div id="fzf-header">
+        <div id="fzf-breadcrumb"></div>
+        <div id="fzf-mode"></div>
+      </div>
+      <input id="fzf-input" type="text" autocomplete="off" spellcheck="false" />
+      <div id="fzf-results"></div>
+    </div>
+  </div>
+
   <div id="local-badge" class="hidden">LOCAL</div>
 
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>

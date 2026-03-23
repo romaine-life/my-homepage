@@ -2,7 +2,7 @@
 # Generates frontend/config.js from environment variables.
 #
 # Usage (local dev):
-#   export API_URL="http://localhost:3000"
+#   export API_URL="http://localhost:3001"
 #   bash frontend/generate-config.sh
 #
 # Optional bypass variable (set in CI/CD for corporate firewall workaround):

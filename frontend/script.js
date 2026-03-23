@@ -1420,6 +1420,298 @@ toggleAllBtn.addEventListener("click", toggleAll);
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
   if (e.key === "e") toggleAll();
+  if (e.key === "/") { e.preventDefault(); openFzf("scope"); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); openFzf("all"); }
+});
+
+// ── Fuzzy finder ──────────────────────────────────────────────────
+
+const fzfOverlay = document.getElementById("fzf-overlay");
+const fzfInput = document.getElementById("fzf-input");
+const fzfResults = document.getElementById("fzf-results");
+const fzfBreadcrumb = document.getElementById("fzf-breadcrumb");
+const fzfModeEl = document.getElementById("fzf-mode");
+let fzfActive = false;
+let fzfIndex = 0;
+let fzfItems = [];       // current filtered results
+let fzfMode = "scope";   // "scope" or "all"
+let fzfScopeStack = [];  // stack of { name, children } for drill-down
+
+function flattenBookmarks(items, path) {
+  const out = [];
+  for (const item of items) {
+    const currentPath = path ? path + " › " + item.name : item.name;
+    if (item.url) {
+      out.push({ name: item.name, url: item.url, path: currentPath });
+    }
+    if (item.children) {
+      out.push(...flattenBookmarks(item.children, currentPath));
+    }
+  }
+  return out;
+}
+
+function currentScopeItems() {
+  if (fzfScopeStack.length === 0) return currentBookmarks;
+  return fzfScopeStack[fzfScopeStack.length - 1].children;
+}
+
+function fuzzyMatch(text, query) {
+  const lower = text.toLowerCase();
+  const qLower = query.toLowerCase();
+  let qi = 0;
+  let score = 0;
+  let lastMatchIdx = -1;
+  const indices = [];
+  for (let i = 0; i < lower.length && qi < qLower.length; i++) {
+    if (lower[i] === qLower[qi]) {
+      indices.push(i);
+      score += (lastMatchIdx === i - 1) ? 2 : 1;
+      if (i === 0 || " /-_›".includes(text[i - 1])) score += 3;
+      lastMatchIdx = i;
+      qi++;
+    }
+  }
+  if (qi < qLower.length) return null;
+  return { score, indices };
+}
+
+function highlightMatch(text, indices) {
+  if (!indices || indices.length === 0) return document.createTextNode(text);
+  const frag = document.createDocumentFragment();
+  const indexSet = new Set(indices);
+  let i = 0;
+  while (i < text.length) {
+    if (indexSet.has(i)) {
+      const span = document.createElement("span");
+      span.className = "fzf-match";
+      let end = i;
+      while (end < text.length && indexSet.has(end)) end++;
+      span.textContent = text.slice(i, end);
+      frag.appendChild(span);
+      i = end;
+    } else {
+      let end = i;
+      while (end < text.length && !indexSet.has(end)) end++;
+      frag.appendChild(document.createTextNode(text.slice(i, end)));
+      i = end;
+    }
+  }
+  return frag;
+}
+
+function updateFzfChrome() {
+  // Breadcrumb
+  fzfBreadcrumb.innerHTML = "";
+  if (fzfMode === "scope") {
+    const root = document.createElement("span");
+    root.className = "fzf-crumb";
+    root.textContent = "~";
+    fzfBreadcrumb.appendChild(root);
+    for (const frame of fzfScopeStack) {
+      const sep = document.createElement("span");
+      sep.className = "fzf-crumb-sep";
+      sep.textContent = "›";
+      fzfBreadcrumb.appendChild(sep);
+      const crumb = document.createElement("span");
+      crumb.className = "fzf-crumb";
+      crumb.textContent = frame.name;
+      fzfBreadcrumb.appendChild(crumb);
+    }
+    fzfModeEl.textContent = "/  scope";
+    fzfInput.placeholder = "Filter" + (fzfScopeStack.length ? " in " + fzfScopeStack[fzfScopeStack.length - 1].name : "") + "…";
+  } else {
+    fzfBreadcrumb.textContent = "all bookmarks";
+    fzfModeEl.textContent = "⌘K  search";
+    fzfInput.placeholder = "Search all bookmarks…";
+  }
+}
+
+function renderFzfResults() {
+  fzfResults.innerHTML = "";
+  if (fzfItems.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "fzf-empty";
+    empty.textContent = fzfInput.value ? "No matches" : (fzfMode === "scope" ? "Empty folder" : "No bookmarks");
+    fzfResults.appendChild(empty);
+    return;
+  }
+  fzfItems.forEach((item, i) => {
+    const row = document.createElement("div");
+    const isFolder = item.type === "folder";
+    row.className = "fzf-row" + (i === fzfIndex ? " active" : "") + (isFolder ? " fzf-folder" : "");
+
+    const icon = document.createElement("span");
+    icon.className = "fzf-icon";
+    icon.textContent = isFolder ? "▸" : "→";
+    row.appendChild(icon);
+
+    const content = document.createElement("div");
+    content.className = "fzf-row-content";
+    const nameEl = document.createElement("div");
+    nameEl.className = "fzf-name";
+    nameEl.appendChild(highlightMatch(item.name, item.nameIndices));
+    content.appendChild(nameEl);
+    if (item.path && fzfMode === "all") {
+      const pathEl = document.createElement("div");
+      pathEl.className = "fzf-path";
+      pathEl.appendChild(highlightMatch(item.path, item.pathIndices));
+      content.appendChild(pathEl);
+    }
+    row.appendChild(content);
+
+    if (isFolder) {
+      const hint = document.createElement("span");
+      hint.className = "fzf-hint";
+      hint.textContent = "enter";
+      row.appendChild(hint);
+    }
+
+    row.addEventListener("click", () => selectFzfItem(item));
+    row.addEventListener("mouseenter", () => { fzfIndex = i; updateFzfActive(); });
+    fzfResults.appendChild(row);
+  });
+}
+
+function updateFzfActive() {
+  fzfResults.querySelectorAll(".fzf-row").forEach((row, i) => {
+    row.classList.toggle("active", i === fzfIndex);
+  });
+  const active = fzfResults.querySelector(".fzf-row.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+function filterFzf() {
+  const query = fzfInput.value.trim();
+
+  if (fzfMode === "scope") {
+    const items = currentScopeItems();
+    const mapped = items.map(item => {
+      const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+      return {
+        name: item.name,
+        url: item.url || null,
+        type: hasChildren ? "folder" : "leaf",
+        source: item,
+        nameIndices: [],
+      };
+    });
+    if (!query) {
+      fzfItems = mapped;
+    } else {
+      fzfItems = mapped
+        .map(item => {
+          const m = fuzzyMatch(item.name, query);
+          if (!m) return null;
+          return { ...item, score: m.score, nameIndices: m.indices };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+    }
+  } else {
+    // "all" mode — flat search across every bookmark with a URL
+    const all = flattenBookmarks(currentBookmarks, "");
+    const mapped = all.map(item => ({ ...item, type: "leaf", nameIndices: [], pathIndices: [] }));
+    if (!query) {
+      fzfItems = mapped;
+    } else {
+      fzfItems = all
+        .map(item => {
+          const nameMatch = fuzzyMatch(item.name, query);
+          const pathMatch = fuzzyMatch(item.path, query);
+          const best = (nameMatch && pathMatch)
+            ? (nameMatch.score >= pathMatch.score ? nameMatch.score + 1 : pathMatch.score)
+            : (nameMatch?.score || pathMatch?.score || 0);
+          if (!nameMatch && !pathMatch) return null;
+          return {
+            ...item,
+            type: "leaf",
+            score: best,
+            nameIndices: nameMatch?.indices || [],
+            pathIndices: pathMatch?.indices || [],
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+    }
+  }
+
+  fzfIndex = 0;
+  renderFzfResults();
+}
+
+function selectFzfItem(item) {
+  if (item.type === "folder") {
+    // Drill into folder
+    fzfScopeStack.push({ name: item.name, children: item.source.children });
+    fzfInput.value = "";
+    updateFzfChrome();
+    filterFzf();
+  } else if (item.url) {
+    closeFzf();
+    window.location.href = ensureAbsoluteUrl(item.url);
+  }
+}
+
+function fzfGoUp() {
+  if (fzfScopeStack.length === 0) return false;
+  fzfScopeStack.pop();
+  fzfInput.value = "";
+  updateFzfChrome();
+  filterFzf();
+  return true;
+}
+
+function openFzf(mode) {
+  if (fzfActive || editMode) return;
+  fzfActive = true;
+  fzfMode = mode;
+  fzfScopeStack = [];
+  fzfInput.value = "";
+  fzfOverlay.classList.remove("hidden");
+  fzfInput.focus();
+  updateFzfChrome();
+  filterFzf();
+}
+
+function closeFzf() {
+  fzfActive = false;
+  fzfOverlay.classList.add("hidden");
+  fzfInput.blur();
+}
+
+fzfInput.addEventListener("input", filterFzf);
+
+fzfInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    // In scope mode, go up first; if already at root, close
+    if (fzfMode === "scope" && fzfGoUp()) return;
+    closeFzf();
+    return;
+  }
+  if (e.key === "Backspace" && fzfInput.value === "" && fzfMode === "scope") {
+    fzfGoUp();
+    return;
+  }
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (fzfItems.length) { fzfIndex = (fzfIndex + 1) % fzfItems.length; updateFzfActive(); }
+    return;
+  }
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (fzfItems.length) { fzfIndex = (fzfIndex - 1 + fzfItems.length) % fzfItems.length; updateFzfActive(); }
+    return;
+  }
+  if (e.key === "Enter" || (e.key === "Tab" && fzfMode === "scope")) {
+    e.preventDefault();
+    if (fzfItems[fzfIndex]) selectFzfItem(fzfItems[fzfIndex]);
+    return;
+  }
+});
+
+fzfOverlay.addEventListener("click", (e) => {
+  if (e.target === fzfOverlay) closeFzf();
 });
 
 editBtn.addEventListener("click", enterEditMode);

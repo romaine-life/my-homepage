@@ -719,6 +719,151 @@ body {
   pointer-events: none;
 }
 
+/* ── Fuzzy finder overlay ────────────────────── */
+
+#fzf-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 17, 27, 0.85);
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+#fzf-container {
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+#fzf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border-bottom: 1px solid #313244;
+  font-size: 0.7em;
+  min-height: 28px;
+}
+
+#fzf-breadcrumb {
+  color: #585b70;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#fzf-breadcrumb .fzf-crumb {
+  color: #a6e3a1;
+}
+
+#fzf-breadcrumb .fzf-crumb-sep {
+  color: #45475a;
+  margin: 0 0.3em;
+}
+
+#fzf-mode {
+  color: #45475a;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+#fzf-input {
+  background: #313244;
+  color: #cdd6f4;
+  border: none;
+  border-bottom: 1px solid #45475a;
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 16px;
+  outline: none;
+}
+
+#fzf-input::placeholder {
+  color: #585b70;
+}
+
+#fzf-results {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.fzf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.fzf-row:hover {
+  background: #313244;
+}
+
+.fzf-row.active {
+  background: #313244;
+  outline: 1px solid #89b4fa;
+  outline-offset: -1px;
+}
+
+.fzf-icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  color: #585b70;
+  font-size: 0.85em;
+  text-align: center;
+}
+
+.fzf-row-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.fzf-name {
+  color: #89b4fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fzf-row.fzf-folder .fzf-name {
+  color: #a6e3a1;
+}
+
+.fzf-path {
+  color: #585b70;
+  font-size: 0.75em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fzf-hint {
+  flex-shrink: 0;
+  color: #45475a;
+  font-size: 0.7em;
+}
+
+.fzf-match {
+  color: #f9e2af;
+  font-weight: bold;
+}
+
+.fzf-empty {
+  padding: 16px;
+  color: #585b70;
+  text-align: center;
+}
+
 /* ── Mobile responsive ───────────────────────── */
 
 @media (max-width: 600px) {
