@@ -30,9 +30,6 @@ resource "azurerm_storage_container" "profile_pictures" {
   container_access_type = "blob"
 }
 
-# Grant shared API's managed identity write access to the blob container
-resource "azurerm_role_assignment" "shared_api_storage_contributor" {
-  scope                = azurerm_storage_account.profile_pictures.id
-  role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = "ae41eca7-9819-4028-8690-91a92e494893" # shared-api system-assigned identity
-}
+# Role assignment for shared API's managed identity (Storage Blob Data Contributor)
+# is managed out-of-band — the OIDC service principal lacks
+# Microsoft.Authorization/roleAssignments/write on this scope.
