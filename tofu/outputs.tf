@@ -29,21 +29,6 @@ output "cosmos_db_container_name" {
   description = "Cosmos DB container name for user data"
 }
 
-output "backend_api_url" {
-  value       = "https://${local.back_app_dns_name}.${local.infra.dns_zone_name}"
-  description = "The URL of the backend Container App API"
-}
-
-output "container_app_name" {
-  value       = azurerm_container_app.homepage_api["homepage-api"].name
-  description = "Name of the backend Container App, picked up by github actions to handle custom dns for container app."
-}
-
-output "container_app_default_fqdn" {
-  value       = azurerm_container_app.homepage_api["homepage-api"].ingress[0].fqdn
-  description = "Default Azure-assigned FQDN for the backend Container App"
-}
-
 output "app_config_prefix" {
   value       = local.front_app_dns_name
   description = "App Configuration key prefix, derived from the frontend DNS name"

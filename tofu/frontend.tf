@@ -42,12 +42,10 @@ resource "auth0_client" "backend_apple" {
   app_type       = "regular_web"
   is_first_party = true
   callbacks = [
-    # Custom domain
-    "https://${local.back_app_dns_name}.${local.infra.dns_zone_name}/auth/apple/callback",
-    # Container App default FQDN
-    "https://${azurerm_container_app.homepage_api["homepage-api"].ingress[0].fqdn}/auth/apple/callback",
+    # Shared API
+    "https://api.${local.infra.dns_zone_name}/homepage/auth/apple/callback",
     # Local development
-    "http://localhost:3000/auth/apple/callback",
+    "http://localhost:3000/homepage/auth/apple/callback",
   ]
   grant_types = ["authorization_code"]
 }

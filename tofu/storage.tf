@@ -30,9 +30,14 @@ resource "azurerm_storage_container" "profile_pictures" {
   container_access_type = "blob"
 }
 
-# Grant Container App managed identity write access to the blob container
-resource "azurerm_role_assignment" "container_app_storage_contributor" {
+# Grant shared API's managed identity write access to the blob container
+resource "azurerm_role_assignment" "shared_api_storage_contributor" {
   scope                = azurerm_storage_account.profile_pictures.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = azurerm_container_app.homepage_api["homepage-api"].identity[0].principal_id
+  principal_id         = data.azurerm_container_app.shared_api.identity[0].principal_id
+}
+
+data "azurerm_container_app" "shared_api" {
+  name                = "shared-api"
+  resource_group_name = local.infra.resource_group_name
 }
