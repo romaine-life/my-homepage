@@ -1,10 +1,9 @@
-name: Deploy
+name: Deploy Frontend
 
 on:
-  workflow_run:
-    workflows: ["Phase 1 - CI Build"]
+  push:
     branches: [main]
-    types: [completed]
+    paths: ["frontend/**"]
   workflow_dispatch:
 
 permissions:
@@ -14,40 +13,20 @@ permissions:
 env:
   STATIC_WEB_APP_NAME: homepage-app
   RESOURCE_GROUP_NAME: homepage-rg
-  CONTAINER_APP_NAME: homepage-api
-  REGISTRY: ghcr.io
-  IMAGE_NAME: nelsong6/my-homepage/homepage-api
-  # workflow_run uses the triggering workflow's SHA; workflow_dispatch uses the current SHA
-  TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
-  deploy-backend:
-    name: Deploy Backend API
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Azure Login via OIDC
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.ARM_CLIENT_ID }}
-          tenant-id: ${{ vars.ARM_TENANT_ID }}
-          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-
-      - name: Deploy to Container App
-        run: |
-          az containerapp update \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TARGET_SHA }}
-
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TARGET_SHA }}
+
+      - name: Generate Config
+        run: |
+          export API_URL="https://api.romaine.life/homepage"
+          chmod +x ./frontend/generate-config.sh
+          ./frontend/generate-config.sh
 
       - name: Azure Login via OIDC
         uses: azure/login@v2
@@ -55,22 +34,6 @@ jobs:
           client-id: ${{ vars.ARM_CLIENT_ID }}
           tenant-id: ${{ vars.ARM_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-
-      - name: Get Container App FQDN
-        id: container-fqdn
-        run: |
-          FQDN=$(az containerapp show \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP_NAME }} \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "fqdn=$FQDN" >> $GITHUB_OUTPUT
-
-      - name: Generate Config
-        run: |
-          export API_URL="https://homepage.api.romaine.life"
-          export API_BYPASS_URL="https://${{ steps.container-fqdn.outputs.fqdn }}"
-          chmod +x ./frontend/generate-config.sh
-          ./frontend/generate-config.sh
 
       - name: Get Static Web App Token
         id: swa-token
