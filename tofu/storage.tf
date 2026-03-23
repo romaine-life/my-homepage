@@ -34,10 +34,5 @@ resource "azurerm_storage_container" "profile_pictures" {
 resource "azurerm_role_assignment" "shared_api_storage_contributor" {
   scope                = azurerm_storage_account.profile_pictures.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = data.azurerm_container_app.shared_api.identity[0].principal_id
-}
-
-data "azurerm_container_app" "shared_api" {
-  name                = "shared-api"
-  resource_group_name = local.infra.resource_group_name
+  principal_id         = "ae41eca7-9819-4028-8690-91a92e494893" # shared-api system-assigned identity
 }
