@@ -1,9 +1,6 @@
 name: Publish Routes Package
 
 on:
-  push:
-    branches: ["main"]
-    paths: ["packages/routes/**"]
   workflow_run:
     workflows: ["Infrastructure"]
     branches: [main]
@@ -12,62 +9,37 @@ on:
 permissions:
   contents: read
   packages: write
-  actions: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # On workflow_run, only proceed if Infrastructure succeeded
-    if: github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 2
 
-      - name: Check if Infrastructure is running (push only)
-        id: infra-check
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Check if routes changed
+        id: check
         run: |
-          RUNNING=$(gh run list --workflow=tofu.yml --branch=main --status=in_progress --json databaseId --jq 'length')
-          QUEUED=$(gh run list --workflow=tofu.yml --branch=main --status=queued --json databaseId --jq 'length')
-          if [ "$((RUNNING + QUEUED))" -gt 0 ]; then
-            echo "Infrastructure workflow is running — deferring to workflow_run trigger"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Check if routes changed (workflow_run only)
-        id: routes-check
-        if: github.event_name == 'workflow_run'
-        run: |
-          CHANGED=$(git diff --name-only HEAD^ HEAD -- packages/routes/ || true)
+          CHANGED=$(git diff --name-only HEAD^ HEAD -- packages/routes/)
           if [ -z "$CHANGED" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
           else
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Determine if publish should proceed
-        id: should-publish
-        run: |
-          if [ "${{ steps.infra-check.outputs.skip }}" = "true" ] || [ "${{ steps.routes-check.outputs.skip }}" = "true" ]; then
-            echo "publish=false" >> $GITHUB_OUTPUT
-          else
-            echo "publish=true" >> $GITHUB_OUTPUT
-          fi
-
       - uses: actions/setup-node@v4
-        if: steps.should-publish.outputs.publish == 'true'
+        if: steps.check.outputs.skip != 'true'
         with:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
 
       - name: Publish to GitHub Packages
-        if: steps.should-publish.outputs.publish == 'true'
+        if: steps.check.outputs.skip != 'true'
         working-directory: packages/routes
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,7 +48,7 @@ jobs:
           npm publish
 
       - name: Trigger API rebuild
-        if: steps.should-publish.outputs.publish == 'true'
+        if: steps.check.outputs.skip != 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.DISPATCH_TOKEN }}

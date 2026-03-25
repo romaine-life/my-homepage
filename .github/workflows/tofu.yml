@@ -6,7 +6,6 @@ on:
     paths: ['tofu/**']
   push:
     branches: [main]
-    paths: ['tofu/**']
   workflow_dispatch:
 
 concurrency:
