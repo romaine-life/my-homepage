@@ -4,6 +4,10 @@ on:
   push:
     branches: ["main"]
     paths: ["packages/routes/**"]
+  workflow_run:
+    workflows: ["Infrastructure"]
+    branches: [main]
+    types: [completed]
 
 permissions:
   contents: read
@@ -12,15 +16,39 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Run when: (1) direct push with no concurrent tofu changes, or
+    # (2) Infrastructure workflow completed successfully and routes changed in that push.
+    # Skip when: Infrastructure is still running (workflow_run will pick it up after).
+    if: >-
+      (github.event_name == 'push' &&
+       !contains(join(github.event.commits.*.modified, ','), 'tofu/') &&
+       !contains(join(github.event.commits.*.added, ','), 'tofu/')) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success')
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Check if routes changed (workflow_run only)
+        id: check
+        if: github.event_name == 'workflow_run'
+        run: |
+          CHANGED=$(git diff --name-only ${{ github.event.workflow_run.head_sha }}^ ${{ github.event.workflow_run.head_sha }} -- packages/routes/ || true)
+          if [ -z "$CHANGED" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
 
       - uses: actions/setup-node@v4
+        if: steps.check.outputs.skip != 'true'
         with:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
 
       - name: Publish to GitHub Packages
+        if: steps.check.outputs.skip != 'true'
         working-directory: packages/routes
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -29,6 +57,7 @@ jobs:
           npm publish
 
       - name: Trigger API rebuild
+        if: steps.check.outputs.skip != 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.DISPATCH_TOKEN }}

@@ -27,6 +27,7 @@ import { requireAdmin } from './middleware/requireAdmin.js';
  *     auth0AppleClientId: string,
  *     auth0AppleClientSecret: string,
  *     storageAccountEndpoint: string,
+ *     swaDefaultHostname?: string,
  *   },
  *   container: import('@azure/cosmos').Container,
  * }} opts
@@ -49,6 +50,9 @@ export function createHomepageApp({ config, container }) {
     'https://homepage.romaine.life',
     'http://localhost:5500',
   ];
+  if (config.swaDefaultHostname) {
+    allowedRedirectUris.push(`https://${config.swaDefaultHostname}`);
+  }
 
   // Mount auth routes
   router.use('/auth', createAuthRoutes({
