@@ -18,25 +18,27 @@ jobs:
       github.event.workflow_run.event == 'push'
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 2
-
-      - name: Check if routes changed
-        id: check
-        run: |
-          CHANGED=$(git diff --name-only HEAD^ HEAD -- packages/routes/)
-          if [ -z "$CHANGED" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
 
       - uses: actions/setup-node@v4
-        if: steps.check.outputs.skip != 'true'
         with:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
+
+      - name: Check if publish is needed
+        id: check
+        working-directory: packages/routes
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LOCAL_TARBALL=$(npm pack --dry-run --json 2>/dev/null | jq -r '.[0].shasum')
+          PUBLISHED_TARBALL=$(npm view @nelsong6/my-homepage-routes dist.shasum 2>/dev/null || echo "none")
+          if [ "$LOCAL_TARBALL" = "$PUBLISHED_TARBALL" ]; then
+            echo "No changes to publish"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected, publishing"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Publish to GitHub Packages
         if: steps.check.outputs.skip != 'true'
