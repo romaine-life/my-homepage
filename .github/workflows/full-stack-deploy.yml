@@ -22,18 +22,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Generate Config
-        run: |
-          export API_URL="https://api.romaine.life/homepage"
-          chmod +x ./frontend/generate-config.sh
-          ./frontend/generate-config.sh
-
       - name: Azure Login via OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ vars.ARM_CLIENT_ID }}
           tenant-id: ${{ vars.ARM_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+      - name: Get Bypass API URL
+        id: bypass-url
+        run: |
+          FQDN=$(az containerapp show \
+            --name shared-api \
+            --resource-group infra \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "api_bypass_url=https://$FQDN/homepage" >> $GITHUB_OUTPUT
+
+      - name: Generate Config
+        run: |
+          export API_URL="https://api.romaine.life/homepage"
+          export API_BYPASS_URL="${{ steps.bypass-url.outputs.api_bypass_url }}"
+          chmod +x ./frontend/generate-config.sh
+          ./frontend/generate-config.sh
 
       - name: Get Static Web App Token
         id: swa-token
