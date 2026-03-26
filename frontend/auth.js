@@ -8,15 +8,23 @@ let msalInstance = null;
 let msalReady = null;
 
 function initMsal() {
-  if (!window.msal) return;
-  msalInstance = new msal.PublicClientApplication({
-    auth: {
-      clientId: CONFIG.microsoftClientId,
-      authority: 'https://login.microsoftonline.com/common',
-      redirectUri: window.location.origin,
-    },
-  });
-  msalReady = msalInstance.initialize();
+  if (!window.msal) {
+    console.error('MSAL library not loaded — window.msal is undefined');
+    return;
+  }
+  try {
+    msalInstance = new msal.PublicClientApplication({
+      auth: {
+        clientId: CONFIG.microsoftClientId,
+        authority: 'https://login.microsoftonline.com/common',
+        redirectUri: window.location.origin,
+      },
+    });
+    msalReady = msalInstance.initialize();
+  } catch (err) {
+    console.error('MSAL initialization failed:', err);
+    msalInstance = null;
+  }
 }
 
 /**
@@ -54,11 +62,18 @@ export async function initAuth() {
  * Start Microsoft login via MSAL redirect.
  */
 export async function loginWithMicrosoft() {
-  if (!msalInstance) return;
-  await msalReady;
-  await msalInstance.loginRedirect({
-    scopes: ['openid', 'profile', 'email'],
-  });
+  if (!msalInstance) {
+    console.error('MSAL not initialized — window.msal:', typeof window.msal);
+    return;
+  }
+  try {
+    await msalReady;
+    await msalInstance.loginRedirect({
+      scopes: ['openid', 'profile', 'email'],
+    });
+  } catch (err) {
+    console.error('MSAL loginRedirect failed:', err);
+  }
 }
 
 /** Clear the stored token and reload. */
