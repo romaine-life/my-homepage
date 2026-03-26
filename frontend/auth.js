@@ -64,6 +64,7 @@ export async function loginWithMicrosoft() {
     await msalReady;
     await msalInstance.loginRedirect({
       scopes: ['openid', 'profile', 'email'],
+      prompt: 'select_account',
     });
   } catch (err) {
     console.error('MSAL loginRedirect failed:', err);
