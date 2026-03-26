@@ -42,7 +42,7 @@ export function configurePassport(config) {
       clientID: config.microsoftClientId,
       clientSecret: config.microsoftClientSecret,
       callbackURL: '/placeholder',
-      scope: ['openid', 'profile', 'email'],
+      scope: ['openid', 'profile', 'email', 'User.Read'],
     },
     (_accessToken, _refreshToken, profile, done) => {
       done(null, normaliseMicrosoft(profile));
