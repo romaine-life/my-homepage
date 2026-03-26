@@ -1,73 +1,16 @@
 import { Router } from 'express';
-import cookieParser from 'cookie-parser';
-import passport from 'passport';
-import { configurePassport } from './auth/passport-setup.js';
-import { createAuthRoutes } from './auth/routes.js';
-import { createLocalRoutes } from './auth/local-routes.js';
-import { createRequireAuth } from './middleware/auth.js';
-import { requireAdmin } from './middleware/requireAdmin.js';
 
 /**
- * Creates the complete homepage sub-application as an Express router.
- *
- * Includes cookie-parser and passport middleware scoped to homepage routes,
- * OAuth flows (GitHub, Google, Microsoft, Apple), local auth, bookmarks,
- * settings, and profile picture management.
+ * Creates the homepage routes as an Express router.
+ * Bookmarks and settings CRUD only — auth is injected from the shared API.
  *
  * @param {{
- *   config: {
- *     jwtSigningSecret: string,
- *     githubClientId: string,
- *     githubClientSecret: string,
- *     googleClientId: string,
- *     googleClientSecret: string,
- *     microsoftClientId: string,
- *     microsoftClientSecret: string,
- *     auth0Domain: string,
- *     auth0AppleClientId: string,
- *     auth0AppleClientSecret: string,
- *     storageAccountEndpoint: string,
- *     swaDefaultHostname?: string,
- *   },
+ *   requireAuth: Function,
  *   container: import('@azure/cosmos').Container,
  * }} opts
  */
-export function createHomepageApp({ config, container }) {
+export function createHomepageRoutes({ requireAuth, container }) {
   const router = Router();
-
-  // Homepage-specific middleware (scoped, not global)
-  router.use(cookieParser());
-  router.use(passport.initialize());
-
-  // Configure passport with OAuth secrets
-  configurePassport(config);
-
-  // Auth middleware using homepage's own JWT secret
-  const requireAuth = createRequireAuth({ jwtSecret: config.jwtSigningSecret });
-
-  // Allowed redirect URIs for OAuth callbacks
-  const allowedRedirectUris = [
-    'https://homepage.romaine.life',
-    'http://localhost:5500',
-  ];
-  if (config.swaDefaultHostname) {
-    allowedRedirectUris.push(`https://${config.swaDefaultHostname}`);
-  }
-
-  // Mount auth routes
-  router.use('/auth', createAuthRoutes({
-    jwtSecret: config.jwtSigningSecret,
-    allowedRedirectUris,
-  }));
-
-  // Mount local auth + profile picture routes
-  router.use(createLocalRoutes({
-    jwtSecret: config.jwtSigningSecret,
-    storageAccountEndpoint: config.storageAccountEndpoint,
-    container,
-    requireAuth,
-    requireAdmin,
-  }));
 
   // Health check
   router.get('/health', (req, res) => {

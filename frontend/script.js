@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { initAuth, login, loginLocal, logout, getToken, isAuthenticated, getUser, ensureBackendReady, createLocalAccount, uploadProfilePicture, deleteProfilePicture, fetchSettings, putSettings } from './auth.js';
+import { initAuth, loginWithMicrosoft, logout, getToken, isAuthenticated, getUser, fetchSettings, putSettings } from './auth.js';
 import { createYamlEditor } from './monaco-yaml.js';
 
 // ── DOM references ──────────────────────────────────────────────
@@ -78,8 +78,8 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     loadingEl.classList.remove("hidden");
   }
 
-  // Synchronous — picks up #token= from URL fragment if present.
-  initAuth();
+  // Handle MSAL redirect response and check for stored token.
+  await initAuth();
 
   if (isAuthenticated()) {
     await showApp(cached);
@@ -105,12 +105,6 @@ function showLogin() {
   logoutBtn.classList.add("hidden");
   loginPicker.classList.remove("hidden");
   accountDropdown.classList.add("hidden");
-
-  // Hide Apple button on bypass URL (auth.romaine.life unreachable from R1)
-  if (CONFIG.isBypass) {
-    const appleBtn = document.getElementById("apple-login-btn");
-    if (appleBtn) appleBtn.classList.add("hidden");
-  }
 
   // Load playground bookmarks (persisted locally or use samples)
   const saved = loadPlaygroundBookmarks();
@@ -151,10 +145,7 @@ async function showApp(alreadyRenderedCache) {
   document.getElementById("user-email").textContent = displayText;
 
   let avatarUrl = "";
-  if (user?.isLocal && user?.picture) {
-    document.getElementById("user-avatar").src = user.picture;
-    avatarUrl = user.picture;
-  } else if (email) {
+  if (email) {
     const hash = await sha256(email.trim().toLowerCase());
     avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=192&d=identicon`;
     document.getElementById("user-avatar").src = avatarUrl;
@@ -183,23 +174,6 @@ async function showApp(alreadyRenderedCache) {
   } else {
     displayToggleSection.classList.add("hidden");
     userBtnEl.style.minWidth = "";
-  }
-
-  // Show profile picture section for local users
-  const profileSection = document.getElementById("profile-section");
-  if (user?.isLocal) {
-    profileSection.classList.remove("hidden");
-    document.getElementById("remove-picture-btn").classList.toggle("hidden", !user.picture);
-  } else {
-    profileSection.classList.add("hidden");
-  }
-
-  // Show admin section for admin email
-  const adminSection = document.getElementById("admin-section");
-  if (email === "fullnelsongrip@gmail.com") {
-    adminSection.classList.remove("hidden");
-  } else {
-    adminSection.classList.add("hidden");
   }
 
   // Always fetch fresh bookmarks on login to ensure sync across devices/domains
@@ -1730,10 +1704,8 @@ accountDropdown.addEventListener("click", (e) => {
   e.stopPropagation();
 });
 
-document.querySelectorAll(".login-provider[data-provider]").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    login(btn.dataset.provider);
-  });
+document.getElementById("microsoft-login-btn").addEventListener("click", () => {
+  loginWithMicrosoft();
 });
 
 logoutBtn.addEventListener("click", () => {
@@ -1770,70 +1742,3 @@ document.addEventListener("click", () => {
   document.getElementById("user-bar").classList.remove("open");
 });
 
-// ── Local login form ─────────────────────────────────────────────
-
-document.getElementById("local-login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const username = document.getElementById("local-username").value.trim();
-  const password = document.getElementById("local-password").value;
-  const errorEl = document.getElementById("local-login-error");
-  errorEl.classList.add("hidden");
-
-  try {
-    await loginLocal(username, password);
-    window.location.reload();
-  } catch (err) {
-    errorEl.textContent = err.message;
-    errorEl.classList.remove("hidden");
-  }
-});
-
-// ── Admin: create account form ───────────────────────────────────
-
-document.getElementById("create-account-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const username = document.getElementById("new-username").value.trim();
-  const password = document.getElementById("new-password").value;
-  const displayName = document.getElementById("new-display-name").value.trim();
-  const msgEl = document.getElementById("create-account-msg");
-
-  try {
-    const result = await createLocalAccount(username, password, displayName);
-    msgEl.textContent = `Created: ${result.username}`;
-    msgEl.className = "create-msg-success";
-    msgEl.classList.remove("hidden");
-    document.getElementById("create-account-form").reset();
-  } catch (err) {
-    msgEl.textContent = err.message;
-    msgEl.className = "create-msg-error";
-    msgEl.classList.remove("hidden");
-  }
-});
-
-// ── Profile picture ──────────────────────────────────────────────
-
-document.getElementById("profile-picture-input").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  try {
-    const { pictureUrl } = await uploadProfilePicture(file);
-    document.getElementById("user-avatar").src = pictureUrl;
-    document.getElementById("remove-picture-btn").classList.remove("hidden");
-    const user = getUser();
-    localStorage.setItem("user_display", JSON.stringify({ name: user?.name || "", avatar: pictureUrl }));
-  } catch (err) {
-    alert(err.message);
-  }
-  e.target.value = "";
-});
-
-document.getElementById("remove-picture-btn").addEventListener("click", async () => {
-  try {
-    await deleteProfilePicture();
-    document.getElementById("user-avatar").src = "https://www.gravatar.com/avatar/?s=192&d=mp";
-    document.getElementById("remove-picture-btn").classList.add("hidden");
-    localStorage.setItem("user_display", JSON.stringify({ name: getUser()?.name || "", avatar: "" }));
-  } catch (err) {
-    alert(err.message);
-  }
-});

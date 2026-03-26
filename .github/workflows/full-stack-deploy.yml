@@ -42,6 +42,7 @@ jobs:
         run: |
           export API_URL="https://api.romaine.life/homepage"
           export API_BYPASS_URL="${{ steps.bypass-url.outputs.api_bypass_url }}"
+          export MICROSOFT_CLIENT_ID="${{ vars.MICROSOFT_CLIENT_ID }}"
           chmod +x ./frontend/generate-config.sh
           ./frontend/generate-config.sh
 

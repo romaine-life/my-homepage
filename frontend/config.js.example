@@ -3,4 +3,5 @@ const _isBypass = window.location.hostname.includes("azurestaticapps.net");
 export const CONFIG = {
   apiUrl: _isBypass ? "https://<CONTAINER_APP_FQDN>" : "http://localhost:3001",
   isBypass: _isBypass,
+  microsoftClientId: "<MICROSOFT_CLIENT_ID>",
 };

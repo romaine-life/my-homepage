@@ -1,1 +1,1 @@
-export { createHomepageApp } from './app.js';
+export { createHomepageRoutes } from './app.js';
