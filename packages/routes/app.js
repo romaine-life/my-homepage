@@ -1,20 +1,55 @@
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 /**
  * Creates the homepage routes as an Express router.
- * Bookmarks and settings CRUD only — auth is injected from the shared API.
  *
  * @param {{
  *   requireAuth: Function,
  *   container: import('@azure/cosmos').Container,
+ *   jwtSecret: string,
  * }} opts
  */
-export function createHomepageRoutes({ requireAuth, container }) {
+export function createHomepageRoutes({ requireAuth, container, jwtSecret }) {
   const router = Router();
 
   // Health check
   router.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  });
+
+  // POST /auth/local/login — username/password auth for environments that block Microsoft
+  router.post('/auth/local/login', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password required' });
+    }
+
+    try {
+      const { resources } = await container.items.query({
+        query: 'SELECT * FROM c WHERE c.type = @type AND c.username = @username',
+        parameters: [
+          { name: '@type', value: 'user_account' },
+          { name: '@username', value: username },
+        ],
+      }).fetchAll();
+
+      if (resources.length === 0 || !(await bcrypt.compare(password, resources[0].passwordHash))) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+
+      const account = resources[0];
+      const token = jwt.sign(
+        { sub: account.userId, email: account.username, name: account.displayName, role: 'viewer' },
+        jwtSecret,
+        { expiresIn: '7d' },
+      );
+      res.json({ token, user: { id: account.userId, name: account.displayName, email: account.username, role: 'viewer' } });
+    } catch (error) {
+      console.error('Local login error:', error);
+      res.status(500).json({ error: 'Login failed' });
+    }
   });
 
   // GET /api/bookmarks

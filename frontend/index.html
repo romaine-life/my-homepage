@@ -34,6 +34,13 @@
           <svg viewBox="0 0 21 21" width="18" height="18"><rect x="0" y="0" width="10" height="10" fill="#f25022"/><rect x="11" y="0" width="10" height="10" fill="#7fba00"/><rect x="0" y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg>
           Sign in with Microsoft
         </button>
+        <div class="login-divider">or</div>
+        <form id="local-login-form" class="local-login-form">
+          <input type="text" id="local-username" placeholder="Username" autocomplete="username" required />
+          <input type="password" id="local-password" placeholder="Password" autocomplete="current-password" required />
+          <button type="submit" class="login-provider">Sign in with password</button>
+          <div id="local-login-error" class="hidden"></div>
+        </form>
       </div>
 
       <!-- Display name toggle (authenticated users) -->

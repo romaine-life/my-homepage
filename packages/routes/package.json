@@ -5,6 +5,10 @@
   "description": "Homepage route handlers for the shared API",
   "main": "index.js",
   "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.0"
+  },
   "peerDependencies": {
     "express": "^4.18.0"
   },

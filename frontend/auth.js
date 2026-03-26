@@ -71,6 +71,24 @@ export async function loginWithMicrosoft() {
   }
 }
 
+/**
+ * Local username/password login for environments that block Microsoft.
+ */
+export async function loginLocal(username, password) {
+  const res = await fetch(`${CONFIG.apiUrl}/auth/local/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Login failed (${res.status})`);
+  }
+  const data = await res.json();
+  localStorage.setItem(TOKEN_KEY, data.token);
+  return data;
+}
+
 /** Clear the stored token and reload. */
 export function logout() {
   localStorage.removeItem(TOKEN_KEY);

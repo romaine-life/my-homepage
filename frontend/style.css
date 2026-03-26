@@ -267,6 +267,33 @@ body {
   flex-shrink: 0;
 }
 
+.login-divider {
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+.local-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.local-login-form input {
+  padding: 6px 8px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  font-size: 13px;
+}
+
+#local-login-error {
+  color: #ff6b6b;
+  font-size: 12px;
+}
+
 .login-provider:hover {
   filter: brightness(1.12);
 }

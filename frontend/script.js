@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { initAuth, loginWithMicrosoft, logout, getToken, isAuthenticated, getUser, fetchSettings, putSettings } from './auth.js';
+import { initAuth, loginWithMicrosoft, loginLocal, logout, getToken, isAuthenticated, getUser, fetchSettings, putSettings } from './auth.js';
 import { createYamlEditor } from './monaco-yaml.js';
 
 // ── DOM references ──────────────────────────────────────────────
@@ -1706,6 +1706,22 @@ accountDropdown.addEventListener("click", (e) => {
 
 document.getElementById("microsoft-login-btn").addEventListener("click", () => {
   loginWithMicrosoft();
+});
+
+document.getElementById("local-login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById("local-login-error");
+  errorEl.classList.add("hidden");
+  try {
+    await loginLocal(
+      document.getElementById("local-username").value,
+      document.getElementById("local-password").value,
+    );
+    window.location.reload();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.remove("hidden");
+  }
 });
 
 logoutBtn.addEventListener("click", () => {
