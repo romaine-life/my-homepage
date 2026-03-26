@@ -38,16 +38,24 @@ export async function initAuth() {
     try {
       await msalReady;
       const response = await msalInstance.handleRedirectPromise();
+      console.log('[auth] handleRedirectPromise response:', response ? 'got response' : 'null');
       if (response?.idToken) {
         // Exchange Microsoft ID token for app JWT
-        const res = await fetch(`${CONFIG.apiUrl}/auth/microsoft/login`, {
+        const url = `${CONFIG.apiUrl}/auth/microsoft/login`;
+        console.log('[auth] exchanging idToken at:', url);
+        const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ credential: response.idToken }),
         });
+        console.log('[auth] API response:', res.status, res.statusText);
         if (res.ok) {
           const data = await res.json();
           localStorage.setItem(TOKEN_KEY, data.token);
+          console.log('[auth] JWT stored successfully');
+        } else {
+          const body = await res.text();
+          console.error('[auth] API error:', res.status, body);
         }
       }
     } catch (err) {
