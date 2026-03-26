@@ -8,10 +8,7 @@ let msalInstance = null;
 let msalReady = null;
 
 function initMsal() {
-  if (!window.msal) {
-    console.error('MSAL library not loaded — window.msal is undefined');
-    return;
-  }
+  if (!window.msal) return;
   try {
     msalInstance = new msal.PublicClientApplication({
       auth: {
@@ -38,24 +35,16 @@ export async function initAuth() {
     try {
       await msalReady;
       const response = await msalInstance.handleRedirectPromise();
-      console.log('[auth] handleRedirectPromise response:', response ? 'got response' : 'null');
       if (response?.idToken) {
         // Exchange Microsoft ID token for app JWT
-        const url = `${CONFIG.apiUrl}/auth/microsoft/login`;
-        console.log('[auth] exchanging idToken at:', url);
-        const res = await fetch(url, {
+        const res = await fetch(`${CONFIG.apiUrl}/auth/microsoft/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ credential: response.idToken }),
         });
-        console.log('[auth] API response:', res.status, res.statusText);
         if (res.ok) {
           const data = await res.json();
           localStorage.setItem(TOKEN_KEY, data.token);
-          console.log('[auth] JWT stored successfully');
-        } else {
-          const body = await res.text();
-          console.error('[auth] API error:', res.status, body);
         }
       }
     } catch (err) {
@@ -70,10 +59,7 @@ export async function initAuth() {
  * Start Microsoft login via MSAL redirect.
  */
 export async function loginWithMicrosoft() {
-  if (!msalInstance) {
-    console.error('MSAL not initialized — window.msal:', typeof window.msal);
-    return;
-  }
+  if (!msalInstance) return;
   try {
     await msalReady;
     await msalInstance.loginRedirect({

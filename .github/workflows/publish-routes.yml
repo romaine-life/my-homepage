@@ -1,10 +1,9 @@
 name: Publish Routes Package
 
 on:
-  workflow_run:
-    workflows: ["Infrastructure"]
-    branches: [main]
-    types: [completed]
+  push:
+    branches: ["main"]
+    paths: ["packages/routes/**"]
 
 permissions:
   contents: read
@@ -13,9 +12,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push'
     steps:
       - uses: actions/checkout@v4
 
@@ -24,24 +20,7 @@ jobs:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
 
-      - name: Check if publish is needed
-        id: check
-        working-directory: packages/routes
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          LOCAL_TARBALL=$(npm pack --dry-run --json 2>/dev/null | jq -r '.[0].shasum')
-          PUBLISHED_TARBALL=$(npm view @nelsong6/my-homepage-routes dist.shasum 2>/dev/null || echo "none")
-          if [ "$LOCAL_TARBALL" = "$PUBLISHED_TARBALL" ]; then
-            echo "No changes to publish"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "Changes detected, publishing"
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Publish to GitHub Packages
-        if: steps.check.outputs.skip != 'true'
         working-directory: packages/routes
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,7 +31,6 @@ jobs:
           npm publish
 
       - name: Trigger API rebuild
-        if: steps.check.outputs.skip != 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.DISPATCH_TOKEN }}
