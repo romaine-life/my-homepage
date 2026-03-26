@@ -2,15 +2,41 @@
 
 Bookmark manager web app hosted at homepage.romaine.life.
 
+## Auth
+
+Frontend uses MSAL.js (CDN) for Microsoft login and a local username/password form for restricted environments (corporate firewalls that block Microsoft). Both flows POST credentials to the shared API which returns a 7-day JWT.
+
+- **MSAL.js CDN script must load before Monaco loader.js** — Monaco's AMD `define()` hijacks MSAL's UMD export, leaving `window.msal` undefined
+- `prompt: 'select_account'` forces the Microsoft account picker
+- Local auth route: `POST /homepage/auth/local/login` (bcrypt, in routes package)
+- Microsoft `sub` claim is pairwise per app registration — the same user gets different `sub` values from different apps
+
+## Routes Package (`packages/routes/`)
+
+Published as `@nelsong6/my-homepage-routes` to GitHub Packages. Contains bookmarks/settings CRUD and local login. Receives `requireAuth`, `container`, and `jwtSecret` via dependency injection from the shared API. Dependencies: `bcryptjs`, `jsonwebtoken`. Peer: `express`.
+
+## Publish Pipeline
+
+Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/plant-agent). Auto-bumps patch version from registry, publishes, then dispatches `dependency-updated` to the API repo. After dispatch, the API lockfile must be updated locally before the API build will pick up the new version — `npm ci` uses the lockfile.
+
 ## Change Log
+
+### 2026-03-26
+
+- **Replaced multi-provider OAuth with MSAL.js Microsoft auth** — eliminated passport.js and all server-side OAuth (GitHub, Google, Apple, Auth0) in favor of client-side MSAL.js redirect flow, matching kill-me and plant-agent auth pattern. Routes package stripped to CRUD + local auth only, now receives `requireAuth` and `jwtSecret` via dependency injection from the shared API. Deleted `packages/routes/auth/` and `packages/routes/middleware/`. Removed all auth dependencies except `bcryptjs` and `jsonwebtoken`.
+- **Re-added local username/password login** — for work environments that block Microsoft login (corporate admin approval required). Simple bcrypt-based route in the routes package with a frontend form below the Microsoft button.
+- **Standardized publish-routes trigger** — switched from Infrastructure-chained `workflow_run` with shasum check to direct path-based trigger on `packages/routes/**`, matching kill-me and plant-agent.
+- **Fixed MSAL CDN load order** — MSAL UMD bundle must load before Monaco's `loader.js` or the AMD `define()` hijacks the global export.
+- **Added `prompt: 'select_account'` to MSAL login** — forces Microsoft account picker instead of auto-selecting the last-used account.
 
 ### 2026-03-23
 
-- **Migrated backend to shared API** — extracted all backend routes (OAuth multi-provider auth, local auth, bookmarks, settings, profile pictures) into `@nelsong6/my-homepage-routes` npm package (`packages/routes/`). Routes mounted at `/homepage` prefix in the shared API at `api.romaine.life`. Deleted `backend/` directory, `backend.tf`, `container-app-build.yml`, `backend-deploy.yml`. Old `homepage-api` Container App destroyed along with its custom domain, certificate, and DNS records. Frontend deploy workflow rewritten to frontend-only. Auth0 Apple callback URLs updated to use `api.romaine.life/homepage/auth/apple/callback`. OAuth callback URLs are now domain-agnostic using `req.get('host')` for GitHub, Google, and Microsoft providers. Homepage uses its own JWT signing secret (`my-homepage-jwt-signing-secret`) separate from the shared API's. Storage blob role assignment for shared API identity managed by tofu after fixing OIDC principal permissions in infra-bootstrap.
+- **Migrated backend to shared API** — extracted all backend routes into `@nelsong6/my-homepage-routes` npm package (`packages/routes/`). Routes mounted at `/homepage` prefix in the shared API at `api.romaine.life`. Deleted `backend/` directory and all backend CI/CD workflows. Old `homepage-api` Container App destroyed.
 
 ### 2026-03-25
 
-- **Restored bypass-mode auth for auto-generated SWA URL** — after the shared API migration, the `allowedRedirectUris` list lost the dynamic `SWA_DEFAULT_HOSTNAME` entry that the old per-app backend had. OAuth login from the Azure Static Web Apps auto-generated URL (used to bypass work firewall restrictions) silently redirected back to `homepage.romaine.life` instead, breaking bookmark saves. Fix: SWA default hostname is now stored in Azure App Configuration via tofu (`appconfig.tf`), read by the shared API's `appConfig.js`, and passed through `config.swaDefaultHostname` to `createHomepageApp()` which dynamically adds it to `allowedRedirectUris`. The `publish-routes` workflow now chains after the Infrastructure workflow (via `workflow_run`) when both tofu and routes change in the same push, ensuring the App Config key exists before the API redeploys.
+- **Restored bypass-mode auth for auto-generated SWA URL** — SWA default hostname stored in Azure App Configuration via tofu, read by the shared API, passed through to homepage routes for redirect URI allowlisting.
 
 ### 2026-03-15
-- Added `ensureAbsoluteUrl()` helper in `frontend/script.js` to fix bare-domain bookmarks (e.g. `romaine.life`) being treated as relative URLs. Without a protocol prefix, the browser navigated to `https://homepage.romaine.life/romaine.life` instead of `https://romaine.life`. Applied to both the anchor `href` and the row click handler.
+
+- Added `ensureAbsoluteUrl()` helper in `frontend/script.js` to fix bare-domain bookmarks being treated as relative URLs.
