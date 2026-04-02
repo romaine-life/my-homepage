@@ -1430,6 +1430,30 @@ function currentScopeItems() {
   return fzfScopeStack[fzfScopeStack.length - 1].children;
 }
 
+function flattenScopeItems(items, path, depth, ancestry) {
+  const out = [];
+  for (const item of items) {
+    const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+    const currentPath = path ? path + " › " + item.name : item.name;
+    const currentAncestry = [...ancestry, { name: item.name, children: hasChildren ? item.children : null }];
+    out.push({
+      name: item.name,
+      url: item.url || null,
+      type: hasChildren ? "folder" : "leaf",
+      source: item,
+      path: depth > 0 ? currentPath : "",
+      depth,
+      ancestry: currentAncestry,
+      nameIndices: [],
+      pathIndices: [],
+    });
+    if (hasChildren) {
+      out.push(...flattenScopeItems(item.children, currentPath, depth + 1, currentAncestry));
+    }
+  }
+  return out;
+}
+
 function fuzzyMatch(text, query) {
   const lower = text.toLowerCase();
   const qLower = query.toLowerCase();
@@ -1526,7 +1550,7 @@ function renderFzfResults() {
     nameEl.className = "fzf-name";
     nameEl.appendChild(highlightMatch(item.name, item.nameIndices));
     content.appendChild(nameEl);
-    if (item.path && fzfMode === "all") {
+    if (item.path && (fzfMode === "all" || item.depth > 0)) {
       const pathEl = document.createElement("div");
       pathEl.className = "fzf-path";
       pathEl.appendChild(highlightMatch(item.path, item.pathIndices));
@@ -1567,17 +1591,28 @@ function filterFzf() {
         url: item.url || null,
         type: hasChildren ? "folder" : "leaf",
         source: item,
+        path: "",
+        depth: 0,
+        ancestry: [{ name: item.name, children: hasChildren ? item.children : null }],
         nameIndices: [],
+        pathIndices: [],
       };
     });
     if (!query) {
       fzfItems = mapped;
     } else {
-      fzfItems = mapped
+      const allItems = flattenScopeItems(items, "", 0, []);
+      const depthBonus = 5;
+      fzfItems = allItems
         .map(item => {
-          const m = fuzzyMatch(item.name, query);
-          if (!m) return null;
-          return { ...item, score: m.score, nameIndices: m.indices };
+          const nameMatch = fuzzyMatch(item.name, query);
+          const pathMatch = item.path ? fuzzyMatch(item.path, query) : null;
+          const rawScore = (nameMatch && pathMatch)
+            ? (nameMatch.score >= pathMatch.score ? nameMatch.score + 1 : pathMatch.score)
+            : (nameMatch?.score || pathMatch?.score || 0);
+          if (!nameMatch && !pathMatch) return null;
+          const score = rawScore - (item.depth * depthBonus);
+          return { ...item, score, nameIndices: nameMatch?.indices || [], pathIndices: pathMatch?.indices || [] };
         })
         .filter(Boolean)
         .sort((a, b) => b.score - a.score);
@@ -1616,8 +1651,14 @@ function filterFzf() {
 
 function selectFzfItem(item) {
   if (item.type === "folder") {
-    // Drill into folder
-    fzfScopeStack.push({ name: item.name, children: item.source.children });
+    // Drill into folder — push full ancestry for nested folders
+    if (item.ancestry) {
+      for (const ancestor of item.ancestry) {
+        if (ancestor.children) fzfScopeStack.push({ name: ancestor.name, children: ancestor.children });
+      }
+    } else {
+      fzfScopeStack.push({ name: item.name, children: item.source.children });
+    }
     fzfInput.value = "";
     updateFzfChrome();
     filterFzf();

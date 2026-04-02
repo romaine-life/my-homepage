@@ -37,6 +37,10 @@ Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/pl
 
 - **Restored bypass-mode auth for auto-generated SWA URL** — SWA default hostname stored in Azure App Configuration via tofu, read by the shared API, passed through to homepage routes for redirect URI allowlisting.
 
+### 2026-04-01
+
+- **Expanded scope-mode fuzzy finder to search nested folders** — pressing `/` previously only searched items in the current folder level. Now when typing a query, all nested items (folders and leaves) are included in results with a depth penalty (5 points per level) so top-level items rank higher by default, but typing more of a nested item's name guarantees reaching it. Added `flattenScopeItems` helper, path breadcrumbs for nested results, and full ancestry push onto scope stack when selecting a nested folder.
+
 ### 2026-03-15
 
 - Added `ensureAbsoluteUrl()` helper in `frontend/script.js` to fix bare-domain bookmarks being treated as relative URLs.
