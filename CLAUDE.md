@@ -41,6 +41,7 @@ Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/pl
 - **Created `frontend/fzh-terminal.js`** — ES module (~280 lines) containing the ANSI parser (Catppuccin Mocha palette), grid renderer, font metrics measurement, WASM loader, keyboard forwarding, and ResizeObserver. Adapted from the fuzzy-tiers-showcase.
 - **Added WASM static assets** — `fzt.wasm`, `wasm_exec.js`, `SymbolsNerdFontMono-Regular.ttf` added to `frontend/`.
 - **Added `localhost:3001` as SPA redirect URI** — registered in the Azure app registration (`959bd3fa`) so Microsoft login works during local dev. Documented the port 3001 requirement in CLAUDE.md Auth section.
+- **Fixed missing file icons in fzt terminal** — BMP Private Use Area glyphs (U+E000-U+F8FF, e.g., file icon U+F016) weren't detected as wide characters by the ANSI parser, so they didn't get Symbols Nerd Font Mono styling and rendered as tofu. Expanded wide char detection to include the BMP PUA range and added the nerd font to the terminal CSS fallback stack.
 
 ### 2026-03-26
 
