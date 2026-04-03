@@ -65,26 +65,23 @@
       <button id="sync-btn" title="Sync bookmarks from server">🔄</button>
       <button id="import-export-btn" title="YAML Editor">YAML</button>
       <button id="yaml-save-btn" class="hidden" title="Import YAML">💾</button>
+      <button id="side-rail-toggle" title="Toggle side panel">&laquo;</button>
     </div>
     <div id="api-error" class="hidden"></div>
-    <div id="tree"></div>
-  </div>
-
-  <!-- Fuzzy finder overlay -->
-  <div id="fzf-overlay" class="hidden">
-    <div id="fzf-container">
-      <div id="fzf-header">
-        <div id="fzf-breadcrumb"></div>
-        <div id="fzf-mode"></div>
+    <div id="main-panels">
+      <div id="terminal-panel">
+        <pre id="fzh-terminal" tabindex="0"></pre>
       </div>
-      <input id="fzf-input" type="text" autocomplete="off" spellcheck="false" />
-      <div id="fzf-results"></div>
+      <div id="side-rail">
+        <div id="tree"></div>
+      </div>
     </div>
   </div>
 
   <div id="local-badge" class="hidden">LOCAL</div>
 
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.12.0/lib/msal-browser.min.js"></script>
+  <script src="wasm_exec.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/min/vs/loader.js"></script>
   <script type="module" src="script.js"></script>
 
