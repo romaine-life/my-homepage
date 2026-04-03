@@ -57,7 +57,7 @@ body {
 
 #fzh-terminal {
   flex: 1;
-  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", monospace;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", "Symbols Nerd Font Mono", monospace;
   font-size: 16px;
   line-height: 1.2;
   padding: 8px;

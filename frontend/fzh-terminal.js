@@ -89,7 +89,7 @@ function parseANSI(ansi) {
       }
       const cp = row.codePointAt(i);
       const char = String.fromCodePoint(cp);
-      const wide = cp > 0xFFFF;
+      const wide = cp > 0xFFFF || (cp >= 0xE000 && cp <= 0xF8FF);
       cells.push({ char, fg, bg, bold, italic, dim, underline, wide });
       i += char.length;
     }
