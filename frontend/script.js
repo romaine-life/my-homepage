@@ -1393,6 +1393,7 @@ toggleAllBtn.addEventListener("click", toggleAll);
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && editMode) { e.preventDefault(); saveEdits(); return; }
   if (e.key === "e") toggleAll();
   if (e.key === "/") { e.preventDefault(); openFzf("scope"); }
   if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); openFzf("all"); }
