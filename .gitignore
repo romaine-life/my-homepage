@@ -1,6 +1,7 @@
 frontend/config.js
 frontend/bookmarks.js
 frontend/fzt.wasm
+frontend/fzt-terminal.js
 frontend/.env
 frontend/node_modules/
 backend/.env
