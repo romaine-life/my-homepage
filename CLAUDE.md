@@ -18,30 +18,55 @@ Published as `@nelsong6/my-homepage-routes` to GitHub Packages. Contains bookmar
 
 ## fzt Terminal Integration
 
-Primary navigation is a fzt (fuzzy-tiered) WASM terminal rendered in a `<pre>` element. The Go TUI runs in-browser via WebAssembly — all scoring, filtering, and rendering happens in Go; the JS side is stateless (forwards keyboard events, parses ANSI output, renders styled spans).
+Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go TUI runs in-browser via WebAssembly — all scoring, filtering, and rendering happens in Go; the JS side is stateless (forwards keyboard events, parses ANSI output, renders styled spans, handles row clicks).
 
-- **Layout**: Two-panel flex — terminal panel (left, `flex: 1`) + side rail (right, 280px, collapsible) containing the existing bookmark tree for click navigation
-- **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.init(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke
+- **Layout**: Single-panel — fzt terminal fills the main content area. No side rail. The HTML tree only appears during edit mode (full-width). The old two-panel side-rail layout was removed.
+- **Unified tree+search**: fzt starts in tree view mode (`fzt.initTree`). The tree is always visible. Typing activates search — the tree auto-expands to spotlight the top match, and a flat ranked results list appears below. Escape clears query / pops scope / exits search. Three focus layers: tree → prompt → results (Tab to descend, Escape to ascend).
+- **Tree navigation**: In the tree layer, Enter toggles folder expand/collapse, Right expands (or descends to first child), Left collapses (or moves to parent). Standard tree behavior — never leaves tree focus.
+- **Scope as breadcrumb**: In prompt/results layers, Tab on a folder result or typing a folder name + Space scopes into that folder. The folder name appears as greyed-out locked text in the prompt (looks like you typed it). Backspace on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
+- **Click support**: Row `<div>` click handlers call `fzt.clickRow(row)` — fzt maps the visual row to the tree or results section. Folders toggle expand/collapse, leaves return URLs for navigation.
+- **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.initTree(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
 - **Keyboard routing**: All keys forwarded to fzt by default. Forwarding stops when `editMode` is active or focus is in an input/textarea/select.
+- **Edit mode**: Swaps from fzt terminal to HTML tree editor (existing click-based UI, full-width). Save/cancel returns to fzt.
+- **YAML editor**: Monaco editor overlays inside the fzt terminal panel (same `#main-panel`, positioned below the search bar). fzt stays visible behind it — prompt and search box peek through above. YAML editing is a web-native concern; fzt owns navigation/search, the web layer owns editing. The editor uses the same Catppuccin Mocha theme and `#181825` background as the terminal.
 - **WASM assets**: `fzt.wasm` (~4.6MB), `wasm_exec.js` (Go WASM runtime), `SymbolsNerdFontMono-Regular.ttf` (nerd font icons for folder/file glyphs)
 - **Script load order**: MSAL CDN → `wasm_exec.js` → Monaco loader → `script.js` (module). `wasm_exec.js` must load before ES modules since it defines the global `Go` constructor.
-- **fzt.wasm build**: `cd fuzzy-tiered && GOOS=js GOARCH=wasm go build -o fzt.wasm ./cmd/wasm` — copy to `frontend/fzt.wasm`
+- **fzt.wasm**: Not committed to git (gitignored). Downloaded from the latest fzt release at deploy time. For local dev: `cd D:\repos\fzt && $env:GOOS="js"; $env:GOARCH="wasm"; go build -o D:\repos\my-homepage\frontend\fzt.wasm ./cmd/wasm`
 - **ANSI parser**: `fzh-terminal.js` contains a Catppuccin Mocha 16-color palette mapping, full SGR parser (16/256/RGB color, bold/italic/dim/underline), wide character detection for nerd font icons, and a grid renderer that batches adjacent same-styled cells into single spans
 
 ## Publish Pipeline
 
 Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/plant-agent). Auto-bumps patch version from registry, publishes, then dispatches `dependency-updated` to the API repo. After dispatch, the API lockfile must be updated locally before the API build will pick up the new version — `npm ci` uses the lockfile.
 
+## fzt Deploy Pipeline
+
+The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm` from the latest fzt GitHub release at deploy time — no WASM committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt version automatically redeploys both the showcase and this app.
+
 ## Change Log
+
+### 2026-04-04
+
+- **fzt WASM downloaded at deploy time** — removed `fzt.wasm` from git (gitignored). Deploy workflow now fetches the latest WASM from fzt's GitHub releases. Added `repository_dispatch` trigger (`fzt-updated`) so new fzt releases automatically redeploy the frontend. Motivated by wanting the fzt showcase and homepage to stay in sync with the fzt tool without manual WASM updates or bot commits.
 
 ### 2026-04-03
 
-- **Replaced JS fuzzy finder with fzt WASM terminal** — the old modal fuzzy finder overlay (`/` for scope, `Ctrl+K` for all) was removed entirely. In its place, fzt (fuzzy-tiered) runs as an always-visible terminal panel via WebAssembly. The Go TUI handles all scoring, hierarchical drill-down, and rendering; JS just forwards keystrokes and renders ANSI output as styled HTML spans. Bookmarks are serialized to YAML and fed to `fzt.loadYAML()`.
+- **Unified tree+search architecture** — replaced the two-panel layout (fzt terminal + side rail) with a single-panel fzt terminal that handles both tree browsing and search. The side rail, side-rail toggle, and all visual/text mode switching JS were removed. fzt now starts in tree view mode and handles tree→search→tree transitions internally via Go. The HTML tree editor remains for edit mode only.
+- **Tree view restyled to match fzt** — folder colors changed from green to teal (`#94e2d5`, matching fzt's `ColorDarkCyan`), +/- toggles replaced with nerd font icons (folder `\uF024B`, file `\uF016`), link indicator `↗` removed, hover highlight changed to dark navy (matching fzt's `ColorDarkBlue`), prompt hint added at top of tree. Tree font bumped from 14px to 16px for full-width layout.
+- **Click support in fzt terminal** — row `<div>` click handlers call `fzt.clickRow(row)` which maps visual rows to tree items or results. Folders toggle expand/collapse, leaves navigate to URLs.
+- **Scope as breadcrumb** — in prompt/results layers, Tab on folder result or typing folder name + Space scopes into that folder. Folder name appears as greyed-out locked text in the prompt. Backspace on empty query pops scope. Tree navigation (Enter/Right/Left) expands/collapses folders in place without leaving tree focus.
+- **Three-layer focus model** — tree (arrow nav, Enter/Right expand, Left collapse), prompt (typing query, tree auto-expands), results (Tab'd into bottom list). Escape cancels from tree; clears query / pops scope / exits search from prompt.
+- **Replaced JS fuzzy finder with fzt WASM terminal** — the old modal fuzzy finder overlay (`/` for scope, `Ctrl+K` for all) was removed entirely. In its place, fzt runs as an always-visible terminal panel via WebAssembly. The Go TUI handles all scoring, hierarchical drill-down, and rendering; JS just forwards keystrokes and renders ANSI output as styled HTML spans. Bookmarks are serialized to YAML and fed to `fzt.loadYAML()`.
 - **Two-panel layout** — replaced the centered 720px single-column layout with a flex two-panel design: fzt terminal on the left (fills available space), collapsible side rail on the right (280px) containing the existing bookmark tree at 14px for click navigation. Toolbar spans full width above both panels.
-- **Created `frontend/fzh-terminal.js`** — ES module (~280 lines) containing the ANSI parser (Catppuccin Mocha palette), grid renderer, font metrics measurement, WASM loader, keyboard forwarding, and ResizeObserver. Adapted from the fuzzy-tiers-showcase.
+- **Created `frontend/fzh-terminal.js`** — ES module (~280 lines) containing the ANSI parser (Catppuccin Mocha palette), grid renderer, font metrics measurement, WASM loader, keyboard forwarding, and ResizeObserver. Adapted from fzt-showcase.
 - **Added WASM static assets** — `fzt.wasm`, `wasm_exec.js`, `SymbolsNerdFontMono-Regular.ttf` added to `frontend/`.
 - **Added `localhost:3001` as SPA redirect URI** — registered in the Azure app registration (`959bd3fa`) so Microsoft login works during local dev. Documented the port 3001 requirement in CLAUDE.md Auth section.
 - **Fixed missing file icons in fzt terminal** — BMP Private Use Area glyphs (U+E000-U+F8FF, e.g., file icon U+F016) weren't detected as wide characters by the ANSI parser, so they didn't get Symbols Nerd Font Mono styling and rendered as tofu. Expanded wide char detection to include the BMP PUA range and added the nerd font to the terminal CSS fallback stack.
+- **Fixed YAML editor button** — YAML button rendered the Monaco editor into `#tree` but never swapped panel visibility (fzt terminal stayed on top). Added `showTree()`/`showTerminal()` calls so the YAML button hides the fzt terminal and shows the tree panel with the Monaco editor, and all close/save paths swap back. Affected: button click, save (playground + authenticated), and toggleAll close path.
+- **YAML editor fills panel** — changed `.yaml-editor` from `height: 60vh` with resize handles to `height: 100%` so the Monaco editor fills the full `#tree` container, matching the fzt terminal's full-panel layout.
+- **YAML editor renders inside fzt terminal box** — instead of swapping to the HTML tree panel, the Monaco editor now overlays inside `#main-panel` starting below the fzt search bar (row 4), respecting the terminal's drawn `│` side borders and `└───┘` bottom border. The fzt prompt stays visible above. Position is calculated dynamically from font metrics. Decided that YAML editing is a web-native concern (not a Go TUI feature) — fzt owns navigation/search, the web layer owns editing.
+- **Monaco editor styled to match fzt** — changed editor background from `#1e1e2e` to `#181825` (matching terminal panel), gutter background to match, and line height from 22px to 19px (matching fzt's 1.2 ratio at 16px). Catppuccin Mocha syntax colors were already correct.
+- **Cursor reworked to box-shadow underline** — the CSS cursor blink was a web-only decoration (Go reports coordinates but doesn't draw a cursor — that's the terminal emulator's job). Previous `border-bottom` approach reserved 2px of layout space even when transparent, causing a visible seam at the search box edge. Switched to `box-shadow: 0 2px 0` which paints over content without reserving space, so the blink on/off is seamless. Character text stays fully visible throughout.
+- **fzt showcase: "fuzzy finder" links to junegunn/fzf** — the intro text "A fuzzy finder with hierarchical navigation" now links the words "fuzzy finder" to the original fzf project. Added inline `{text}(url)` link syntax parser to the DOS command history renderer.
 
 ### 2026-03-26
 
