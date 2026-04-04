@@ -38,25 +38,18 @@ body {
   flex-shrink: 0;
 }
 
-#main-panels {
-  display: flex;
+#main-panel {
   flex: 1;
   min-height: 0;
-  gap: 12px;
-}
-
-#terminal-panel {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+  position: relative;
   background: #181825;
   border-radius: 8px;
   overflow: hidden;
 }
 
 #fzh-terminal {
-  flex: 1;
+  position: absolute;
+  inset: 0;
   font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", "Symbols Nerd Font Mono", monospace;
   font-size: 16px;
   line-height: 1.2;
@@ -69,29 +62,30 @@ body {
   margin: 0;
 }
 
+#fzh-terminal.hidden {
+  display: none;
+}
+
 @keyframes fzh-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
+  0%, 49% { box-shadow: 0 2px 0 #cdd6f4; }
+  50%, 100% { box-shadow: none; }
 }
 
 #fzh-terminal .fzh-cursor {
   animation: fzh-blink 1s step-end infinite;
 }
 
-#side-rail {
-  width: 280px;
-  flex-shrink: 0;
+#tree {
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
-  padding-left: 12px;
-  border-left: 1px solid #313244;
+  padding: 12px 16px;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
-#side-rail.collapsed {
+#tree.hidden {
   display: none;
-}
-
-#side-rail-toggle {
-  margin-left: auto;
 }
 
 #toolbar button {
@@ -110,10 +104,6 @@ body {
   background: #45475a;
 }
 
-#tree {
-  font-size: 14px;
-}
-
 /* ── Each node row ─────────────────────────────── */
 
 .node {
@@ -128,18 +118,7 @@ body {
 }
 
 .node.clickable:hover {
-  background: #2a2a3e;
-}
-
-.node.clickable:hover::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: var(--highlight-end, 0ch);
-  background: #2a2a3e;
-  z-index: -1;
+  background: rgb(0, 0, 102);
 }
 
 .node-prefix {
@@ -148,10 +127,24 @@ body {
   user-select: none;
 }
 
-.node-dash {
-  white-space: pre;
-  color: #585b70;
+.node-icon {
+  display: inline-block;
+  width: calc(2 * var(--char-w, 9.6px));
+  text-align: center;
+  font-family: "Symbols Nerd Font Mono", monospace;
+  vertical-align: bottom;
+  line-height: 1.2;
   user-select: none;
+  color: #585b70;
+}
+
+.node-icon.folder-icon {
+  color: #f9e2af;
+  font-weight: bold;
+}
+
+.node-icon.file-icon {
+  color: #585b70;
 }
 
 .node-label a {
@@ -165,29 +158,31 @@ body {
   text-decoration: underline;
 }
 
-.link-indicator {
-  color: #585b70;
-  font-size: 0.75em;
-  margin-left: 0.4ch;
-  transition: color 0.15s;
-}
-
-.node.clickable:hover .link-indicator,
-.node-label a:hover + .link-indicator {
-  color: #b4befe;
-}
-
 .node-label.folder {
-  color: #a6e3a1;
+  color: #94e2d5;
   font-weight: bold;
 }
 
 .node-label.folder a {
-  color: #a6e3a1;
+  color: #94e2d5;
 }
 
 .node-label.folder a:hover {
   color: #b4befe;
+}
+
+/* ── Prompt hint (visual mode) ────────────────── */
+
+.tree-prompt {
+  color: #585b70;
+  font-size: inherit;
+  margin-bottom: 4px;
+  user-select: none;
+}
+
+.tree-prompt .prompt-char {
+  color: #f9e2af;
+  font-weight: bold;
 }
 
 /* ── Hover URL hint ───────────────────────────── */
@@ -223,10 +218,6 @@ body {
 }
 
 /* ── API error banner ────────────────────────── */
-
-#side-rail .node-url {
-  display: none !important;
-}
 
 #api-error {
   margin-bottom: 12px;
@@ -772,13 +763,11 @@ body {
 /* ── Inline YAML editor (inside #tree) ──────── */
 
 .yaml-editor {
-  width: 100%;
-  min-width: 300px;
-  height: 60vh;
-  min-height: 200px;
-  resize: both;
-  overflow: auto;
+  position: absolute;
+  /* top/left/right/bottom set dynamically by JS to fit inside the terminal box border */
   transition: box-shadow 0.15s;
+  overflow: hidden;
+  border-radius: 0;
 }
 
 .yaml-editor.valid {
@@ -840,10 +829,6 @@ body {
   #user-avatar {
     width: 36px;
     height: 36px;
-  }
-
-  #side-rail {
-    display: none;
   }
 
   .node-url {

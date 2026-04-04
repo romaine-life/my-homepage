@@ -40,7 +40,7 @@ export async function initFzhTerminal(containerEl) {
     nerdFontFamily: "'Symbols Nerd Font Mono','Cascadia Code',monospace",
     cursorClass: "fzh-cursor",
     containerPadding: 8,
-    defaultCursorPos: { x: 3, y: 1 },
+    defaultCursorPos: null,
     onAction: (action, url) => {
       if (_onAction) _onAction(action, url);
     },
