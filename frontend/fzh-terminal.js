@@ -125,6 +125,9 @@ function renderGrid(grid, cursorX, cursorY, container) {
   for (let y = 0; y < grid.length; y++) {
     const row = grid[y];
     const rowDiv = document.createElement("div");
+    rowDiv.style.cursor = "pointer";
+    const rowIdx = y;
+    rowDiv.addEventListener("click", () => _handleRowClick(rowIdx));
     let lastBg = null;
     let i = 0;
     while (i < row.length) {
@@ -170,13 +173,9 @@ function renderGrid(grid, cursorX, cursorY, container) {
       if (cell.wide) styles.push("display:inline-block;width:calc(2 * var(--char-w));overflow:hidden;text-align:center;font-family:'Symbols Nerd Font Mono','Cascadia Code',monospace;vertical-align:bottom;line-height:1.2");
 
       if (isCursorCell) {
-        styles.push("background:#cdd6f4");
-        styles.push("color:#1e1e2e");
         span.className = "fzh-cursor";
-        lastBg = "#cdd6f4";
-      } else {
-        lastBg = cell.bg;
       }
+      lastBg = cell.bg;
 
       if (styles.length > 0) {
         span.setAttribute("style", styles.join(";"));
@@ -236,9 +235,12 @@ function computeGridSize(container) {
 
 // ── Keyboard forwarding ────────────────────────────────────────
 let _editMode = false;
+let _active = false;   // true when terminal is the visible mode
+let _onAction = null;  // callback for action events (cancel, select)
 
 function shouldForwardKey(e) {
   if (_editMode) return false;
+  if (!_active) return false;
   if (document.activeElement && document.activeElement.matches("input, textarea, select")) return false;
   if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) return true;
   if (e.ctrlKey && "aAeEuUwWpPnNcC".includes(e.key)) return true;
@@ -264,10 +266,7 @@ function renderFrame(result) {
     const grid = parseANSI(result.ansi);
     let cx = result.cursorX;
     let cy = result.cursorY;
-    if (cx < 0 || cy < 0) {
-      cx = 3;
-      cy = 1;
-    }
+    if (cx < 0 || cy < 0) { cx = 3; cy = 1; }
     renderGrid(grid, cx, cy, _container);
   } finally {
     _rendering = false;
@@ -319,20 +318,7 @@ export async function initFzhTerminal(containerEl) {
     if (!_sessionActive) return;
     if (!shouldForwardKey(e)) return;
     e.preventDefault();
-
-    try {
-      const result = fzt.handleKey(e.key, e.ctrlKey, e.shiftKey);
-      if (result instanceof Error) {
-        console.error("fzt.handleKey error:", result.message);
-        return;
-      }
-      renderFrame(result);
-      if (result.action && result.action.startsWith("select:") && result.url) {
-        window.location.href = ensureAbsoluteUrl(result.url);
-      }
-    } catch (err) {
-      console.error("handleKey threw:", err);
-    }
+    _sendKey(e.key, e.ctrlKey, e.shiftKey);
   });
 
   // ResizeObserver
@@ -382,11 +368,69 @@ export function loadBookmarks(bookmarks) {
   }
 
   _sessionActive = true;
+  _active = true;
   renderFrame(result);
+}
+
+function _handleRowClick(row) {
+  if (!_sessionActive || _editMode) return;
+  try {
+    const result = fzt.clickRow(row);
+    if (result instanceof Error) {
+      console.error("fzt.clickRow error:", result.message);
+      return;
+    }
+    renderFrame(result);
+    if (result.action && _onAction) {
+      _onAction(result.action, result.url);
+    }
+  } catch (err) {
+    console.error("clickRow threw:", err);
+  }
 }
 
 export function setEditMode(val) {
   _editMode = val;
+}
+
+export function setActive(val) {
+  _active = val;
+  // Re-render on activation so resize is current
+  if (val && _sessionActive) {
+    requestAnimationFrame(() => {
+      const { cols, rows } = computeGridSize(_container);
+      const key = cols + "x" + rows;
+      if (key !== _lastGridSize) {
+        _lastGridSize = key;
+        const result = fzt.resize(cols, rows);
+        if (!(result instanceof Error)) renderFrame(result);
+      }
+    });
+  }
+}
+
+export function onAction(callback) {
+  _onAction = callback;
+}
+
+export function sendKey(key, ctrlKey, shiftKey) {
+  _sendKey(key, ctrlKey, shiftKey);
+}
+
+function _sendKey(key, ctrlKey, shiftKey) {
+  try {
+    const result = fzt.handleKey(key, ctrlKey, shiftKey);
+    if (result instanceof Error) {
+      console.error("fzt.handleKey error:", result.message);
+      return;
+    }
+    renderFrame(result);
+    if (result.action && _onAction) {
+      _onAction(result.action, result.url);
+    }
+  } catch (err) {
+    console.error("handleKey threw:", err);
+  }
 }
 
 export function isTerminalReady() {
