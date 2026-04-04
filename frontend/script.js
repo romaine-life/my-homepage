@@ -1,7 +1,7 @@
 import { CONFIG } from './config.js';
 import { initAuth, loginWithMicrosoft, loginLocal, logout, getToken, isAuthenticated, getUser, fetchSettings, putSettings } from './auth.js';
 import { createYamlEditor } from './monaco-yaml.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, isTerminalReady } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const loadingEl = document.getElementById("loading");
@@ -34,6 +34,20 @@ let yamlEditorPromise = null;
 let dragAllowed = false;
 let dragState = null;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
+
+const fzhTerminal = document.getElementById("fzh-terminal");
+
+function showTerminal() {
+  fzhTerminal.classList.remove("hidden");
+  tree.classList.add("hidden");
+  setTerminalActive(true);
+}
+
+function showTree() {
+  fzhTerminal.classList.add("hidden");
+  tree.classList.remove("hidden");
+  setTerminalActive(false);
+}
 
 function ensureAbsoluteUrl(url) {
   if (url && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) return "https://" + url;
@@ -68,7 +82,18 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
 (async function main() {
   // Start WASM loading immediately (large download, runs in parallel with auth)
-  const fzhReady = initFzhTerminal(document.getElementById("fzh-terminal"));
+  const fzhReady = initFzhTerminal(fzhTerminal);
+
+  // Terminal is the default view — fzt starts in tree mode
+  tree.classList.add("hidden");
+  setTerminalActive(true);
+
+  // Wire up fzt action callback
+  onTerminalAction((action, url) => {
+    if (action.startsWith("select:") && url) {
+      window.location.href = ensureAbsoluteUrl(url);
+    }
+  });
 
   const cached = loadCachedBookmarks();
 
@@ -77,7 +102,6 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     loadingEl.classList.add("hidden");
     appEl.classList.remove("hidden");
     currentBookmarks = cached;
-    renderBookmarks(cached);
     fzhReady.then(() => loadFzhBookmarks(cached));
   } else {
     loadingEl.classList.remove("hidden");
@@ -650,52 +674,79 @@ function destroyYamlEditor() {
   }
 }
 
+function openYamlEditor(bookmarks) {
+  destroyYamlEditor();
+  const mainPanel = document.getElementById("main-panel");
+  const yamlText = serializeBookmarks(bookmarks, currentFormat);
+  const wrapper = document.createElement("div");
+  wrapper.className = "yaml-editor";
+  wrapper.id = "yaml-editor-wrapper";
+  // Position over the results area — inside the terminal's drawn box border
+  const cs = getComputedStyle(fzhTerminal);
+  const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+  const padTop = parseFloat(cs.paddingTop) || 0;
+  const padLeft = parseFloat(cs.paddingLeft) || 0;
+  // Measure 1 character width for the │ border
+  const probe = document.createElement("span");
+  probe.textContent = "M";
+  probe.style.cssText = "font-family:" + cs.fontFamily + ";font-size:" + cs.fontSize + ";position:absolute;left:-9999px";
+  document.body.appendChild(probe);
+  const charW = probe.getBoundingClientRect().width;
+  document.body.removeChild(probe);
+  // Skip 4 rows (border + search box 3 rows), cover the header + separator with the editor
+  wrapper.style.top = (padTop + 4 * lineHeight) + "px";
+  wrapper.style.left = (padLeft + charW) + "px";
+  wrapper.style.right = (padLeft + charW) + "px";
+  wrapper.style.bottom = (padTop + lineHeight) + "px"; // skip bottom border row
+  mainPanel.appendChild(wrapper);
+  setTerminalActive(false);
+
+  const initialValue = yamlText.trim() ? yamlText : SAMPLE_YAML;
+
+  function validate(text) {
+    text = text.trim();
+    if (!text) { wrapper.classList.remove("valid", "invalid"); return; }
+    try {
+      const parsed = deserializeBookmarks(text, currentFormat);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
+      } else {
+        const roundTrip = serializeBookmarks(parsed, currentFormat).trim();
+        const inputLines = text.split("\n").filter(l => l.trim() !== "").length;
+        const outputLines = roundTrip.split("\n").filter(l => l.trim() !== "").length;
+        if (inputLines !== outputLines) {
+          wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
+        } else {
+          wrapper.classList.remove("invalid"); wrapper.classList.add("valid");
+        }
+      }
+    } catch {
+      wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
+    }
+  }
+
+  const pending = createYamlEditor(wrapper, initialValue, validate);
+  yamlEditorPromise = pending;
+  pending.then(instance => {
+    if (yamlEditorPromise !== pending) {
+      instance.destroy();
+      return;
+    }
+    yamlEditorInstance = instance;
+  });
+  validate(initialValue);
+}
+
+function closeYamlEditor() {
+  destroyYamlEditor();
+  const existing = document.getElementById("yaml-editor-wrapper");
+  if (existing) existing.remove();
+  setTerminalActive(true);
+}
+
 function renderBookmarks(bookmarks) {
   destroyYamlEditor();
   tree.innerHTML = "";
-  // YAML editor mode — replace tree with a CodeMirror editor
-  if (yamlExpanded && !editMode) {
-    const yamlText = serializeBookmarks(bookmarks, currentFormat);
-    const wrapper = document.createElement("div");
-    wrapper.className = "yaml-editor";
-    tree.appendChild(wrapper);
-
-    const initialValue = yamlText.trim() ? yamlText : SAMPLE_YAML;
-
-    function validate(text) {
-      text = text.trim();
-      if (!text) { wrapper.classList.remove("valid", "invalid"); return; }
-      try {
-        const parsed = deserializeBookmarks(text, currentFormat);
-        if (!Array.isArray(parsed) || parsed.length === 0) {
-          wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
-        } else {
-          const roundTrip = serializeBookmarks(parsed, currentFormat).trim();
-          const inputLines = text.split("\n").filter(l => l.trim() !== "").length;
-          const outputLines = roundTrip.split("\n").filter(l => l.trim() !== "").length;
-          if (inputLines !== outputLines) {
-            wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
-          } else {
-            wrapper.classList.remove("invalid"); wrapper.classList.add("valid");
-          }
-        }
-      } catch {
-        wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
-      }
-    }
-
-    const pending = createYamlEditor(wrapper, initialValue, validate);
-    yamlEditorPromise = pending;
-    pending.then(instance => {
-      if (yamlEditorPromise !== pending) {
-        instance.destroy();
-        return;
-      }
-      yamlEditorInstance = instance;
-    });
-    validate(initialValue);
-    return;
-  }
 
   if (bookmarks.length === 0 && !editMode) {
     const msg = document.createElement("div");
@@ -706,10 +757,14 @@ function renderBookmarks(bookmarks) {
   }
 
   if (!editMode) {
+    // Prompt hint — looks like fzt's idle prompt, hints that typing switches to search
+    const prompt = document.createElement("div");
+    prompt.className = "tree-prompt";
+    prompt.innerHTML = '<span class="prompt-char">&gt;</span> type to search\u2026';
+    tree.appendChild(prompt);
+
     const urlLeft = Math.ceil(calcMaxRowWidth(bookmarks, 0)) + 2;
     tree.style.setProperty("--url-left", urlLeft + "ch");
-    const maxUrl = calcMaxUrlLen(bookmarks);
-    tree.style.setProperty("--highlight-end", (urlLeft + maxUrl + 2) + "ch");
   }
 
   tree.appendChild(renderList(bookmarks, 0, bookmarks));
@@ -735,27 +790,13 @@ function renderBookmarks(bookmarks) {
 // hover-revealed URLs can be aligned in a single consistent column.
 function calcMaxRowWidth(items, depth) {
   let max = 0;
-  const hasFolderSibling = items.some(it => Array.isArray(it.children) && it.children.length > 0);
   items.forEach((item) => {
     const hasChildren = Array.isArray(item.children) && item.children.length > 0;
-    // indent (4ch per depth) + dash/spacer (2ch if any sibling is a folder) + name + colon if folder + arrow if link
-    const dashWidth = (hasChildren || hasFolderSibling) ? 2 : 0;
-    const width = depth * 4 + dashWidth + item.name.length + (hasChildren ? 1 : 0) + (item.url ? 1.15 : 0);
+    // indent (4ch per depth) + icon (2ch) + name
+    const width = depth * 4 + 2 + item.name.length;
     if (width > max) max = width;
     if (hasChildren) {
       const childMax = calcMaxRowWidth(item.children, depth + 1);
-      if (childMax > max) max = childMax;
-    }
-  });
-  return max;
-}
-
-function calcMaxUrlLen(items) {
-  let max = 0;
-  items.forEach((item) => {
-    if (item.url && item.url.length > max) max = item.url.length;
-    if (Array.isArray(item.children) && item.children.length > 0) {
-      const childMax = calcMaxUrlLen(item.children);
       if (childMax > max) max = childMax;
     }
   });
@@ -767,7 +808,6 @@ function calcMaxUrlLen(items) {
 // `parentArray` is the array containing these items (needed for edit mutations).
 function renderList(items, depth, parentArray) {
   const frag = document.createDocumentFragment();
-  const hasFolderSibling = items.some(it => Array.isArray(it.children) && it.children.length > 0);
   items.forEach((item, i) => {
     const hasChildren = Array.isArray(item.children) && item.children.length > 0;
 
@@ -848,11 +888,11 @@ function renderList(items, depth, parentArray) {
     pre.textContent = "    ".repeat(depth);
     row.appendChild(pre);
 
-    // +/- toggle indicator for folders, nothing for leaves
-    const dash = document.createElement("span");
-    dash.className = "node-dash" + (hasChildren ? " folder-dash" : "");
-    dash.textContent = hasChildren ? "+ " : (hasFolderSibling ? "  " : "");
-    row.appendChild(dash);
+    // Nerd font icon (folder or file)
+    const icon = document.createElement("span");
+    icon.className = "node-icon " + (hasChildren ? "folder-icon" : "file-icon");
+    icon.textContent = hasChildren ? "\uDB80\uDE4B" : "\uF016";  // nerd font folder U+F024B / file U+F016
+    row.appendChild(icon);
 
     // Label
     const label = document.createElement("span");
@@ -862,13 +902,8 @@ function renderList(items, depth, parentArray) {
       a.href = ensureAbsoluteUrl(item.url);
       a.textContent = item.name;
       label.appendChild(a);
-      const arrow = document.createElement("span");
-      arrow.className = "link-indicator";
-      arrow.textContent = "↗";
-      arrow.setAttribute("aria-hidden", "true");
-      label.appendChild(arrow);
     } else {
-      label.textContent = item.name + (hasChildren ? ":" : "");
+      label.textContent = item.name;
     }
     row.appendChild(label);
 
@@ -960,8 +995,7 @@ function renderList(items, depth, parentArray) {
         if (editMode && e.target.closest(".edit-actions")) return;
         if (editMode && e.target.closest(".node-edit-form")) return;
         if (e.target.closest("a") && !editMode) return;
-        const isOpen = childrenContainer.classList.toggle("open");
-        dash.textContent = isOpen ? "- " : "+ ";
+        childrenContainer.classList.toggle("open");
         syncToggleAllBtn();
       });
     } else if (item.url && !editMode) {
@@ -1093,12 +1127,14 @@ function reRenderEdit() {
   tree.classList.add("edit-mode");
   renderBookmarks(editBookmarks);
   tree.querySelectorAll(".children").forEach((c) => c.classList.add("open"));
-  tree.querySelectorAll(".folder-dash").forEach((d) => d.textContent = "- ");
 }
 
 // ── Edit mode: enter / save / cancel ────────────────────────────
 
 function enterEditMode() {
+  // Edit mode uses the HTML tree — hide terminal, show tree
+  closeYamlEditor();
+  showTree();
   editMode = true;
   setEditMode(true);
   yamlExpanded = false;
@@ -1171,6 +1207,8 @@ function exitEditMode() {
   cancelBtn.classList.add("hidden");
   saveBtn.disabled = false;
   saveBtn.textContent = "Save";
+  // Switch back to terminal (fzt tree mode)
+  showTerminal();
 }
 
 function cleanBookmarks(items) {
@@ -1240,11 +1278,15 @@ const SAMPLE_YAML = `- name: Example Folder
 importExportBtn.addEventListener("click", () => {
   yamlExpanded = !yamlExpanded;
   yamlSaveBtn.classList.toggle("hidden", !yamlExpanded);
-  renderBookmarks(currentBookmarks);
+  if (yamlExpanded) {
+    openYamlEditor(currentBookmarks);
+  } else {
+    closeYamlEditor();
+  }
 });
 
 yamlSaveBtn.addEventListener("click", async () => {
-  const wrapper = tree.querySelector(".yaml-editor");
+  const wrapper = document.getElementById("yaml-editor-wrapper");
   if (!wrapper || !wrapper.classList.contains("valid")) return;
   if (!yamlEditorInstance) return;
   const text = yamlEditorInstance.getValue().trim();
@@ -1258,7 +1300,7 @@ yamlSaveBtn.addEventListener("click", async () => {
     currentBookmarks = cleaned;
     yamlExpanded = false;
     yamlSaveBtn.classList.add("hidden");
-    renderBookmarks(currentBookmarks);
+    closeYamlEditor();
     if (isTerminalReady()) loadFzhBookmarks(currentBookmarks);
     return;
   }
@@ -1274,7 +1316,7 @@ yamlSaveBtn.addEventListener("click", async () => {
       yamlExpanded = false;
       yamlSaveBtn.classList.add("hidden");
       yamlSaveBtn.disabled = false;
-      renderBookmarks(currentBookmarks);
+      closeYamlEditor();
       if (isTerminalReady()) loadFzhBookmarks(currentBookmarks);
 
       if (result.merged) {
@@ -1387,17 +1429,15 @@ function toggleAll() {
   if (yamlExpanded && !editMode) {
     yamlExpanded = false;
     yamlSaveBtn.classList.add("hidden");
-    renderBookmarks(currentBookmarks);
+    closeYamlEditor();
     return;
   }
   const anyOpen = document.querySelectorAll(".children.open").length > 0;
   if (anyOpen) {
     document.querySelectorAll(".children").forEach((c) => c.classList.remove("open"));
-    document.querySelectorAll(".folder-dash").forEach((d) => d.textContent = "+ ");
     toggleAllBtn.textContent = "+";
   } else {
     document.querySelectorAll(".children").forEach((c) => c.classList.add("open"));
-    document.querySelectorAll(".folder-dash").forEach((d) => d.textContent = "- ");
     toggleAllBtn.textContent = "-";
   }
 }
@@ -1409,15 +1449,6 @@ document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && editMode) { e.preventDefault(); saveEdits(); return; }
   // Only handle toggleAll when terminal is not capturing keys (edit mode)
   if (e.key === "e" && editMode) toggleAll();
-});
-
-// ── Side rail toggle ──────────────────────────────────────────────
-
-document.getElementById("side-rail-toggle").addEventListener("click", () => {
-  const rail = document.getElementById("side-rail");
-  const btn = document.getElementById("side-rail-toggle");
-  rail.classList.toggle("collapsed");
-  btn.innerHTML = rail.classList.contains("collapsed") ? "&raquo;" : "&laquo;";
 });
 
 editBtn.addEventListener("click", enterEditMode);
