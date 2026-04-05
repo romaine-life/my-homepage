@@ -1,6 +1,5 @@
 import { CONFIG } from './config.js';
 import { initAuth, loginWithMicrosoft, loginLocal, logout, getToken, isAuthenticated, getUser, fetchSettings, putSettings } from './auth.js';
-import { createYamlEditor } from './monaco-yaml.js';
 import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
@@ -28,9 +27,6 @@ let lastFetchedVersion = null;  // timestamp of last fetched bookmarks (for conf
 let originalBookmarks = [];  // original bookmarks at fetch time (for 3-way merge)
 let userAuthenticated = false;
 let playgroundMode = false;
-let yamlExpanded = false;
-let yamlEditorInstance = null;
-let yamlEditorPromise = null;
 let dragAllowed = false;
 let dragState = null;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
@@ -89,9 +85,39 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   setTerminalActive(true);
 
   // Wire up fzt action callback
-  onTerminalAction((action, url) => {
+  onTerminalAction(async (action, url) => {
     if (action.startsWith("select:") && url) {
       window.location.href = ensureAbsoluteUrl(url);
+    } else if (action === "copy-yaml") {
+      const yaml = bookmarksToYaml(currentBookmarks);
+      await navigator.clipboard.writeText(yaml);
+    } else if (action === "paste-yaml") {
+      try {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (!text) return;
+        const parsed = yamlToBookmarks(text);
+        if (!Array.isArray(parsed) || parsed.length === 0) { alert("Clipboard does not contain valid bookmark YAML."); return; }
+        const cleaned = cleanBookmarks(parsed);
+        if (playgroundMode) {
+          savePlaygroundBookmarks(cleaned);
+          currentBookmarks = cleaned;
+          if (isTerminalReady()) loadFzhBookmarks(currentBookmarks);
+          return;
+        }
+        const result = await saveBookmarksWithConflictHandling(cleaned);
+        if (result.success) {
+          const finalBookmarks = result.merged ? result.bookmarks : cleaned;
+          saveCachedBookmarks(finalBookmarks);
+          currentBookmarks = finalBookmarks;
+          if (isTerminalReady()) loadFzhBookmarks(currentBookmarks);
+          if (result.merged) alert("Bookmarks merged with remote changes.");
+        } else {
+          showConflictResolutionUI(result.localBookmarks, result.serverBookmarks, result.conflicts);
+        }
+      } catch (err) {
+        console.error("paste-yaml failed:", err);
+        alert("Failed to save bookmarks from clipboard: " + err.message);
+      }
     }
   });
 
@@ -666,86 +692,7 @@ function isDescendant(target, ancestor) {
 
 // ── Rendering ───────────────────────────────────────────────────
 
-function destroyYamlEditor() {
-  yamlEditorPromise = null;
-  if (yamlEditorInstance) {
-    yamlEditorInstance.destroy();
-    yamlEditorInstance = null;
-  }
-}
-
-function openYamlEditor(bookmarks) {
-  destroyYamlEditor();
-  const mainPanel = document.getElementById("main-panel");
-  const yamlText = serializeBookmarks(bookmarks, currentFormat);
-  const wrapper = document.createElement("div");
-  wrapper.className = "yaml-editor";
-  wrapper.id = "yaml-editor-wrapper";
-  // Position over the results area — inside the terminal's drawn box border
-  const cs = getComputedStyle(fzhTerminal);
-  const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
-  const padTop = parseFloat(cs.paddingTop) || 0;
-  const padLeft = parseFloat(cs.paddingLeft) || 0;
-  // Measure 1 character width for the │ border
-  const probe = document.createElement("span");
-  probe.textContent = "M";
-  probe.style.cssText = "font-family:" + cs.fontFamily + ";font-size:" + cs.fontSize + ";position:absolute;left:-9999px";
-  document.body.appendChild(probe);
-  const charW = probe.getBoundingClientRect().width;
-  document.body.removeChild(probe);
-  // Skip 4 rows (border + search box 3 rows), cover the header + separator with the editor
-  wrapper.style.top = (padTop + 4 * lineHeight) + "px";
-  wrapper.style.left = (padLeft + charW) + "px";
-  wrapper.style.right = (padLeft + charW) + "px";
-  wrapper.style.bottom = (padTop + lineHeight) + "px"; // skip bottom border row
-  mainPanel.appendChild(wrapper);
-  setTerminalActive(false);
-
-  const initialValue = yamlText.trim() ? yamlText : SAMPLE_YAML;
-
-  function validate(text) {
-    text = text.trim();
-    if (!text) { wrapper.classList.remove("valid", "invalid"); return; }
-    try {
-      const parsed = deserializeBookmarks(text, currentFormat);
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
-      } else {
-        const roundTrip = serializeBookmarks(parsed, currentFormat).trim();
-        const inputLines = text.split("\n").filter(l => l.trim() !== "").length;
-        const outputLines = roundTrip.split("\n").filter(l => l.trim() !== "").length;
-        if (inputLines !== outputLines) {
-          wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
-        } else {
-          wrapper.classList.remove("invalid"); wrapper.classList.add("valid");
-        }
-      }
-    } catch {
-      wrapper.classList.remove("valid"); wrapper.classList.add("invalid");
-    }
-  }
-
-  const pending = createYamlEditor(wrapper, initialValue, validate);
-  yamlEditorPromise = pending;
-  pending.then(instance => {
-    if (yamlEditorPromise !== pending) {
-      instance.destroy();
-      return;
-    }
-    yamlEditorInstance = instance;
-  });
-  validate(initialValue);
-}
-
-function closeYamlEditor() {
-  destroyYamlEditor();
-  const existing = document.getElementById("yaml-editor-wrapper");
-  if (existing) existing.remove();
-  setTerminalActive(true);
-}
-
 function renderBookmarks(bookmarks) {
-  destroyYamlEditor();
   tree.innerHTML = "";
 
   if (bookmarks.length === 0 && !editMode) {
@@ -1133,15 +1080,11 @@ function reRenderEdit() {
 
 function enterEditMode() {
   // Edit mode uses the HTML tree — hide terminal, show tree
-  closeYamlEditor();
   showTree();
   editMode = true;
   setEditMode(true);
-  yamlExpanded = false;
   editBookmarks = deepClone(currentBookmarks);
   editBtn.classList.add("hidden");
-  importExportBtn.classList.add("hidden");
-  yamlSaveBtn.classList.add("hidden");
   saveBtn.classList.remove("hidden");
   cancelBtn.classList.remove("hidden");
   reRenderEdit();
@@ -1201,9 +1144,7 @@ function exitEditMode() {
   editBookmarks = null;
   tree.classList.remove("edit-mode");
   editBtn.classList.remove("hidden");
-  importExportBtn.classList.remove("hidden");
   saveBtn.classList.add("hidden");
-  yamlExpanded = false;
   cancelBtn.classList.add("hidden");
   saveBtn.disabled = false;
   saveBtn.textContent = "Save";
@@ -1260,93 +1201,6 @@ syncBtn.addEventListener("click", async () => {
     alert("Failed to sync bookmarks. Please try again.");
   }
 });
-
-// ── Import / Export ──────────────────────────────────────────────
-
-const importExportBtn = document.getElementById("import-export-btn");
-const yamlSaveBtn = document.getElementById("yaml-save-btn");
-let currentFormat = "yaml";
-
-const SAMPLE_YAML = `- name: Example Folder
-  children:
-    - name: Example Link
-      url: https://example.com
-    - name: Another Link
-      url: https://example.org
-`;
-
-importExportBtn.addEventListener("click", () => {
-  yamlExpanded = !yamlExpanded;
-  yamlSaveBtn.classList.toggle("hidden", !yamlExpanded);
-  if (yamlExpanded) {
-    openYamlEditor(currentBookmarks);
-  } else {
-    closeYamlEditor();
-  }
-});
-
-yamlSaveBtn.addEventListener("click", async () => {
-  const wrapper = document.getElementById("yaml-editor-wrapper");
-  if (!wrapper || !wrapper.classList.contains("valid")) return;
-  if (!yamlEditorInstance) return;
-  const text = yamlEditorInstance.getValue().trim();
-  if (!text) return;
-  let parsed;
-  try { parsed = deserializeBookmarks(text, currentFormat); } catch (err) { alert("Failed to parse: " + err.message); return; }
-  if (!Array.isArray(parsed)) { alert("Import data must be an array of bookmarks."); return; }
-  const cleaned = cleanBookmarks(parsed);
-  if (playgroundMode) {
-    savePlaygroundBookmarks(cleaned);
-    currentBookmarks = cleaned;
-    yamlExpanded = false;
-    yamlSaveBtn.classList.add("hidden");
-    closeYamlEditor();
-    if (isTerminalReady()) loadFzhBookmarks(currentBookmarks);
-    return;
-  }
-  try {
-    yamlSaveBtn.disabled = true;
-
-    const result = await saveBookmarksWithConflictHandling(cleaned);
-
-    if (result.success) {
-      const finalBookmarks = result.merged ? result.bookmarks : cleaned;
-      saveCachedBookmarks(finalBookmarks);
-      currentBookmarks = finalBookmarks;
-      yamlExpanded = false;
-      yamlSaveBtn.classList.add("hidden");
-      yamlSaveBtn.disabled = false;
-      closeYamlEditor();
-      if (isTerminalReady()) loadFzhBookmarks(currentBookmarks);
-
-      if (result.merged) {
-        alert('Imported bookmarks were automatically merged with remote changes.');
-      }
-    } else {
-      // Manual conflict resolution required
-      yamlSaveBtn.disabled = false;
-      showConflictResolutionUI(result.localBookmarks, result.serverBookmarks, result.conflicts);
-    }
-  } catch (err) {
-    console.error("Failed to import bookmarks:", err);
-    alert("Failed to save imported bookmarks. Please try again.");
-    yamlSaveBtn.disabled = false;
-  }
-});
-
-// ── Serializers ─────────────────────────────────────────────────
-
-function serializeBookmarks(bookmarks, format) {
-  switch (format) {
-    default: return bookmarksToYaml(bookmarks);
-  }
-}
-
-function deserializeBookmarks(text, format) {
-  switch (format) {
-    default: return yamlToBookmarks(text);
-  }
-}
 
 // ── YAML serializer ─────────────────────────────────────────────
 
@@ -1426,12 +1280,6 @@ function syncToggleAllBtn() {
 }
 
 function toggleAll() {
-  if (yamlExpanded && !editMode) {
-    yamlExpanded = false;
-    yamlSaveBtn.classList.add("hidden");
-    closeYamlEditor();
-    return;
-  }
   const anyOpen = document.querySelectorAll(".children.open").length > 0;
   if (anyOpen) {
     document.querySelectorAll(".children").forEach((c) => c.classList.remove("open"));

@@ -760,25 +760,6 @@ body {
   text-decoration: none;
 }
 
-/* ── Inline YAML editor (inside #tree) ──────── */
-
-.yaml-editor {
-  position: absolute;
-  /* top/left/right/bottom set dynamically by JS to fit inside the terminal box border */
-  transition: box-shadow 0.15s;
-  overflow: hidden;
-  border-radius: 0;
-}
-
-.yaml-editor.valid {
-  box-shadow: inset 2px 0 0 #a6e3a1;
-}
-
-.yaml-editor.invalid {
-  box-shadow: inset 2px 0 0 #f38ba8;
-}
-
-
 /* ── Cold-start loading indicator ──────────── */
 
 .login-provider.provider-loading {
