@@ -28,10 +28,11 @@ Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go 
 - **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.init(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
 - **Keyboard routing**: All keys forwarded to fzt by default. Forwarding stops when `editMode` is active or focus is in an input/textarea/select.
 - **Edit mode**: Swaps from fzt terminal to HTML tree editor (existing click-based UI, full-width). Save/cancel returns to fzt.
-- **WASM assets**: `fzt.wasm` (~4.6MB), `wasm_exec.js` (Go WASM runtime), `SymbolsNerdFontMono-Regular.ttf` (nerd font icons for folder/file glyphs)
+- **Shared assets**: `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js` — all downloaded from fzt releases at deploy time (gitignored). `fzt-web.js` provides built-in Catppuccin Mocha palette, DOS font stack, and cursor config. `fzh-terminal.js` is a thin app-specific wrapper that only overrides `containerPadding` and `defaultCursorPos`.
+- **CRT visual style**: Shared `fzt-terminal.css` provides scanlines, vignette, rounded corners, and cursor blink. CSS variables `--fzt-bg: #181825` and `--fzt-fg: #cdd6f4` override the defaults for Catppuccin theming. DOS font (Perfect DOS VGA 437) with font-smoothing disabled.
+- **Fonts**: `PerfectDOSVGA437.ttf` (primary terminal font), `SymbolsNerdFontMono-Regular.ttf` (nerd font icons)
 - **Script load order**: MSAL CDN → `wasm_exec.js` → `script.js` (module). `wasm_exec.js` must load before ES modules since it defines the global `Go` constructor.
-- **fzt.wasm**: Not committed to git (gitignored). Downloaded from the latest fzt release at deploy time. For local dev: `cd D:\repos\fzt && $env:GOOS="js"; $env:GOARCH="wasm"; go build -o D:\repos\my-homepage\frontend\fzt.wasm ./cmd/wasm`
-- **ANSI parser**: `fzh-terminal.js` contains a Catppuccin Mocha 16-color palette mapping, full SGR parser (16/256/RGB color, bold/italic/dim/underline), wide character detection for nerd font icons, and a grid renderer that batches adjacent same-styled cells into single spans
+- **Local dev**: `cd D:\repos\fzt && $env:GOOS="js"; $env:GOARCH="wasm"; go build -o D:\repos\my-homepage\frontend\fzt.wasm ./cmd/wasm`. Also copy `web/fzt-terminal.js`, `web/fzt-terminal.css`, `web/fzt-web.js` to `frontend/`.
 
 ## Publish Pipeline
 
@@ -39,7 +40,7 @@ Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/pl
 
 ## fzt Deploy Pipeline
 
-The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm` from the latest fzt GitHub release at deploy time — no WASM committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt version automatically redeploys both the showcase and this app.
+The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt GitHub release at deploy time — none committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt version automatically redeploys both the showcase and this app.
 
 ## Change Log
 
@@ -47,6 +48,10 @@ The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm` from the late
 
 - **Replaced Monaco YAML editor with fzt clipboard commands** — removed the YAML button, Monaco editor, and all related code (`monaco-yaml.js`, CDN script tag, `openYamlEditor`/`closeYamlEditor` functions, `serializeBookmarks`/`deserializeBookmarks` wrappers, YAML editor CSS, `yamlExpanded`/`yamlEditorInstance` state). YAML editing now uses fzt's `:` → "tree edit" → "copy yaml" / "paste yaml" commands, which use the browser clipboard API. "copy yaml" serializes `currentBookmarks` to YAML via `bookmarksToYaml()` and writes to clipboard. "paste yaml" reads clipboard, parses with `yamlToBookmarks()`, cleans, and saves via the API (with conflict handling) or localStorage in playground mode.
 - **Added `.claude/launch.json`** — preview server config for `npx serve` on port 3001.
+- **Adopted shared CRT styling** — consume `fzt-terminal.css` from fzt releases for scanlines, vignette, rounded corners, and cursor underline blink. Added `fzt-terminal-window` class to `#main-panel`. Page background changed to near-black (`#050505`), terminal background to Catppuccin surface (`#181825`). Font-smoothing disabled for DOS pixel-perfect rendering.
+- **Adopted shared `fzt-web.js`** — `fzh-terminal.js` now imports `createFztWeb` instead of `createFztTerminal`. Removed inline Catppuccin palette, font stack, and cursor class — all provided by the shared component's defaults. Only `containerPadding: 8` and `defaultCursorPos: null` are overridden.
+- **DOS font** — added Perfect DOS VGA 437 as primary terminal font, matching fzt-showcase. Cascadia Code remains as fallback.
+- **Toolbar simplified** — removed toggle-all (+) button (no longer functional). Edit and Sync buttons changed from styled boxes with emoji to plain green text labels matching fzt-showcase link style.
 
 ### 2026-04-04
 

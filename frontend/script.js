@@ -13,7 +13,6 @@ const editBtn = document.getElementById("edit-btn");
 const saveBtn = document.getElementById("save-btn");
 const cancelBtn = document.getElementById("cancel-btn");
 const apiError = document.getElementById("api-error");
-const toggleAllBtn = document.getElementById("toggle-all");
 
 const CACHE_KEY = "cached_bookmarks";
 const PLAYGROUND_KEY = "playground_bookmarks";
@@ -943,7 +942,6 @@ function renderList(items, depth, parentArray) {
         if (editMode && e.target.closest(".node-edit-form")) return;
         if (e.target.closest("a") && !editMode) return;
         childrenContainer.classList.toggle("open");
-        syncToggleAllBtn();
       });
     } else if (item.url && !editMode) {
       // Wire link — whole row navigates (view mode only, not in yaml view)
@@ -1272,31 +1270,11 @@ function yamlToBookmarks(text) {
   return parseList(0);
 }
 
-// ── Toolbar ─────────────────────────────────────────────────────
-
-function syncToggleAllBtn() {
-  const anyOpen = document.querySelectorAll(".children.open").length > 0;
-  toggleAllBtn.textContent = anyOpen ? "-" : "+";
-}
-
-function toggleAll() {
-  const anyOpen = document.querySelectorAll(".children.open").length > 0;
-  if (anyOpen) {
-    document.querySelectorAll(".children").forEach((c) => c.classList.remove("open"));
-    toggleAllBtn.textContent = "+";
-  } else {
-    document.querySelectorAll(".children").forEach((c) => c.classList.add("open"));
-    toggleAllBtn.textContent = "-";
-  }
-}
-
-toggleAllBtn.addEventListener("click", toggleAll);
+// ── Keyboard shortcuts ──────────────────────────────────────────
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && editMode) { e.preventDefault(); saveEdits(); return; }
-  // Only handle toggleAll when terminal is not capturing keys (edit mode)
-  if (e.key === "e" && editMode) toggleAll();
 });
 
 editBtn.addEventListener("click", enterEditMode);

@@ -84,19 +84,19 @@ body {
 }
 
 #toolbar button {
-  background: #313244;
-  color: #cdd6f4;
-  border: 1px solid #45475a;
-  border-radius: 4px;
-  padding: 4px 12px;
+  background: transparent;
+  color: #4a9a4a;
+  border: none;
+  padding: 0;
   font-family: inherit;
-  font-size: 0.8em;
+  font-size: inherit;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: color 0.15s, text-shadow 0.15s;
 }
 
 #toolbar button:hover {
-  background: #45475a;
+  color: #33ff33;
+  text-shadow: 0 0 6px #33ff33;
 }
 
 /* ── Each node row ─────────────────────────────── */
