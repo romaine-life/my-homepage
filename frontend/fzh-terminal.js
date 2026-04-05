@@ -36,9 +36,9 @@ function bookmarksToYaml(items, indent) {
 export async function initFzhTerminal(containerEl) {
   _term = createFztTerminal(containerEl, {
     palette: PALETTE,
-    fontFamily: '"Cascadia Code","Fira Code","JetBrains Mono","Consolas",monospace',
-    nerdFontFamily: "'Symbols Nerd Font Mono','Cascadia Code',monospace",
-    cursorClass: "fzh-cursor",
+    fontFamily: '"Perfect DOS VGA 437","Cascadia Code","Fira Code","JetBrains Mono","Consolas",monospace',
+    nerdFontFamily: "'Symbols Nerd Font Mono','Perfect DOS VGA 437',monospace",
+    cursorClass: "fzt-cursor",
     containerPadding: 8,
     defaultCursorPos: null,
     onAction: (action, url) => {
