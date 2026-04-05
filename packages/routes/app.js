@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
 /**
