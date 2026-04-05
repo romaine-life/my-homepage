@@ -1,9 +1,9 @@
 # ============================================================================
-# Azure Blob Storage — Profile Pictures
+# Azure Blob Storage — Homepage Assets
 # ============================================================================
-# App-specific storage account with a public-access container for user
-# profile pictures. The Container App's managed identity gets
-# "Storage Blob Data Contributor" so the backend can upload/delete blobs.
+# Shared storage account for profile pictures (public) and bookmarks (private).
+# The Container App's managed identity gets "Storage Blob Data Contributor"
+# so the backend can read/write blobs.
 
 resource "azurerm_storage_account" "profile_pictures" {
   name                     = "homepageprofilepics"
@@ -14,6 +14,8 @@ resource "azurerm_storage_account" "profile_pictures" {
   min_tls_version          = "TLS1_2"
 
   blob_properties {
+    versioning_enabled = true
+
     cors_rule {
       allowed_origins    = ["*"]
       allowed_methods    = ["GET"]
@@ -28,6 +30,12 @@ resource "azurerm_storage_container" "profile_pictures" {
   name                  = "profile-pictures"
   storage_account_id    = azurerm_storage_account.profile_pictures.id
   container_access_type = "blob"
+}
+
+resource "azurerm_storage_container" "bookmarks" {
+  name                  = "bookmarks"
+  storage_account_id    = azurerm_storage_account.profile_pictures.id
+  container_access_type = "private"
 }
 
 # Grant shared API's managed identity write access to the blob container

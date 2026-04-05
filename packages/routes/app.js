@@ -1,6 +1,4 @@
 import { Router } from 'express';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 
 /**
  * Creates the homepage routes as an Express router.
@@ -8,10 +6,10 @@ import jwt from 'jsonwebtoken';
  * @param {{
  *   requireAuth: Function,
  *   container: import('@azure/cosmos').Container,
- *   jwtSecret: string,
+ *   bookmarksContainerClient: import('@azure/storage-blob').ContainerClient,
  * }} opts
  */
-export function createHomepageRoutes({ requireAuth, container, jwtSecret }) {
+export function createHomepageRoutes({ requireAuth, container, bookmarksContainerClient }) {
   const router = Router();
 
   // Health check
@@ -19,112 +17,86 @@ export function createHomepageRoutes({ requireAuth, container, jwtSecret }) {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
   });
 
-  // POST /auth/local/login — username/password auth for environments that block Microsoft
-  router.post('/auth/local/login', async (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ error: 'username and password required' });
-    }
+  // ── Bookmarks (Blob Storage) ────────────────────────────────────
 
-    try {
-      const { resources } = await container.items.query({
-        query: 'SELECT * FROM c WHERE c.type = @type AND c.username = @username',
-        parameters: [
-          { name: '@type', value: 'user_account' },
-          { name: '@username', value: username },
-        ],
-      }).fetchAll();
+  // Sanitize userId for use as a blob name
+  function blobName(userId) {
+    return userId.replace(/[|]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') + '.yaml';
+  }
 
-      if (resources.length === 0 || !(await bcrypt.compare(password, resources[0].passwordHash))) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
-
-      const account = resources[0];
-      const token = jwt.sign(
-        { sub: account.userId, email: account.username, name: account.displayName, role: 'viewer' },
-        jwtSecret,
-        { expiresIn: '7d' },
-      );
-      res.json({ token, user: { id: account.userId, name: account.displayName, email: account.username, role: 'viewer' } });
-    } catch (error) {
-      console.error('Local login error:', error);
-      res.status(500).json({ error: 'Login failed' });
-    }
-  });
-
-  // GET /api/bookmarks
+  // GET /api/bookmarks — read bookmark YAML from blob storage
   router.get('/api/bookmarks', requireAuth, async (req, res) => {
     try {
-      const userId = req.user.sub;
-      const { resources } = await container.items.query({
-        query: 'SELECT * FROM c WHERE c.type = @type AND c.userId = @userId',
-        parameters: [
-          { name: '@type', value: 'bookmarks' },
-          { name: '@userId', value: userId },
-        ],
-      }).fetchAll();
-
-      if (resources.length === 0) {
+      const blob = bookmarksContainerClient.getBlobClient(blobName(req.user.sub));
+      const props = await blob.getProperties().catch(() => null);
+      if (!props) {
         return res.json({ bookmarks: [], updatedAt: null });
       }
 
-      res.json({ bookmarks: resources[0].bookmarks, updatedAt: resources[0].updatedAt });
+      const download = await blob.download(0);
+      const chunks = [];
+      for await (const chunk of download.readableStreamBody) {
+        chunks.push(chunk);
+      }
+      const yaml = Buffer.concat(chunks).toString('utf-8');
+
+      // The blob stores a JSON-serialized bookmarks array
+      const bookmarks = JSON.parse(yaml);
+      res.json({ bookmarks, updatedAt: props.lastModified.toISOString() });
     } catch (error) {
       console.error('Error fetching bookmarks:', error);
       res.status(500).json({ error: 'Failed to fetch bookmarks', message: error.message });
     }
   });
 
-  // PUT /api/bookmarks
+  // PUT /api/bookmarks — write bookmark JSON to blob storage (versioned automatically)
   router.put('/api/bookmarks', requireAuth, async (req, res) => {
     try {
-      const userId = req.user.sub;
       const { bookmarks, lastKnownVersion } = req.body;
 
       if (!Array.isArray(bookmarks)) {
         return res.status(400).json({ error: 'Request body must contain a bookmarks array' });
       }
 
+      const blob = bookmarksContainerClient.getBlockBlobClient(blobName(req.user.sub));
+
+      // Conflict detection via blob last-modified
       if (lastKnownVersion) {
-        const { resources } = await container.items.query({
-          query: 'SELECT * FROM c WHERE c.type = @type AND c.userId = @userId',
-          parameters: [
-            { name: '@type', value: 'bookmarks' },
-            { name: '@userId', value: userId },
-          ],
-        }).fetchAll();
-
-        if (resources.length > 0) {
-          const currentDoc = resources[0];
-          const currentVersion = new Date(currentDoc.updatedAt).getTime();
+        const props = await blob.getProperties().catch(() => null);
+        if (props) {
+          const currentVersion = props.lastModified.getTime();
           const clientVersion = new Date(lastKnownVersion).getTime();
-
           if (currentVersion > clientVersion) {
+            const download = await blob.download(0);
+            const chunks = [];
+            for await (const chunk of download.readableStreamBody) {
+              chunks.push(chunk);
+            }
+            const currentBookmarks = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
             return res.status(409).json({
               error: 'Conflict detected',
               message: 'Bookmarks have been modified elsewhere. Please merge changes.',
-              currentBookmarks: currentDoc.bookmarks,
-              currentVersion: currentDoc.updatedAt,
+              currentBookmarks,
+              currentVersion: props.lastModified.toISOString(),
             });
           }
         }
       }
 
-      const bookmarksDoc = {
-        id: `bookmarks_${userId}`,
-        userId,
-        type: 'bookmarks',
-        bookmarks,
-        updatedAt: new Date().toISOString(),
-      };
+      const content = JSON.stringify(bookmarks);
+      await blob.upload(content, content.length, {
+        blobHTTPHeaders: { blobContentType: 'application/json' },
+      });
 
-      const { resource } = await container.items.upsert(bookmarksDoc);
-      res.json({ bookmarks: resource.bookmarks, updatedAt: resource.updatedAt });
+      const props = await blob.getProperties();
+      res.json({ bookmarks, updatedAt: props.lastModified.toISOString() });
     } catch (error) {
       console.error('Error saving bookmarks:', error);
       res.status(500).json({ error: 'Failed to save bookmarks', message: error.message });
     }
   });
+
+  // ── Settings (Cosmos DB) ────────────────────────────────────────
 
   // GET /api/settings
   router.get('/api/settings', requireAuth, async (req, res) => {

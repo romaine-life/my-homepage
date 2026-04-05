@@ -8,61 +8,10 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Account widget (top-left) -->
-  <div id="user-bar" class="hidden">
-    <button id="user-btn">
-      <img id="user-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" />
-      <span id="user-email"></span>
-      <span class="user-chevron">&#9662;</span>
-    </button>
-    <script>
-      (function() {
-        var d = localStorage.getItem("user_display");
-        if (d) { d = JSON.parse(d); }
-        var av = document.getElementById("user-avatar");
-        var em = document.getElementById("user-email");
-        if (d && d.avatar) av.src = d.avatar;
-        if (d && d.showEmail && d.email) {
-          em.textContent = d.email;
-        } else {
-          em.textContent = (d && d.name) ? d.name : "Anonymous";
-        }
-      })();
-    </script>
-    <div id="account-dropdown" class="hidden">
-      <div id="login-picker">
-        <button id="microsoft-login-btn" class="login-provider">
-          <svg viewBox="0 0 21 21" width="18" height="18"><rect x="0" y="0" width="10" height="10" fill="#f25022"/><rect x="11" y="0" width="10" height="10" fill="#7fba00"/><rect x="0" y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg>
-          Sign in with Microsoft
-        </button>
-        <div class="login-divider">or</div>
-        <form id="local-login-form" class="local-login-form">
-          <input type="text" id="local-username" placeholder="Username" autocomplete="username" required />
-          <input type="password" id="local-password" placeholder="Password" autocomplete="current-password" required />
-          <button type="submit" class="login-provider">Sign in with password</button>
-          <div id="local-login-error" class="hidden"></div>
-        </form>
-      </div>
-
-      <!-- Display name toggle (authenticated users) -->
-      <div id="display-toggle-section" class="hidden">
-        <button id="display-toggle-btn">Show email</button>
-      </div>
-
-      <button id="logout-btn" class="hidden">Log out</button>
-    </div>
-  </div>
-
-  <!-- Loading state -->
-  <div id="loading" class="hidden">Loading…</div>
-
-  <!-- Main app (hidden until authenticated) -->
-  <div id="app" class="hidden">
+  <div id="app">
     <div id="toolbar">
-      <button id="edit-btn">Edit</button>
       <button id="save-btn" class="hidden">Save</button>
       <button id="cancel-btn" class="hidden">Cancel</button>
-      <button id="sync-btn">Sync</button>
     </div>
     <div id="api-error" class="hidden"></div>
     <div id="main-panel" class="fzt-terminal-window">
@@ -73,7 +22,6 @@
 
   <div id="local-badge" class="hidden">LOCAL</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.12.0/lib/msal-browser.min.js"></script>
   <script src="wasm_exec.js"></script>
   <script type="module" src="script.js"></script>
 

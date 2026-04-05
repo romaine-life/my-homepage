@@ -13,8 +13,8 @@ function bookmarksToYaml(items, indent) {
   const pad = "  ".repeat(indent);
   let out = "";
   for (const item of items) {
-    out += pad + "- name: " + item.name + "\n";
-    if (item.url) out += pad + "  url: " + item.url + "\n";
+    out += pad + "- name: \"" + item.name.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
+    if (item.url) out += pad + "  url: \"" + item.url.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
     if (Array.isArray(item.children) && item.children.length > 0) {
       out += pad + "  children:\n";
       out += bookmarksToYaml(item.children, indent + 2);

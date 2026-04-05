@@ -1,15 +1,9 @@
 import { CONFIG } from './config.js';
-import { initAuth, loginWithMicrosoft, loginLocal, logout, getToken, isAuthenticated, getUser, fetchSettings, putSettings } from './auth.js';
+import { logout, getToken, isAuthenticated, fetchSettings, putSettings } from './auth.js';
 import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
-const loadingEl = document.getElementById("loading");
-const appEl = document.getElementById("app");
-const loginPicker = document.getElementById("login-picker");
-const accountDropdown = document.getElementById("account-dropdown");
-const logoutBtn = document.getElementById("logout-btn");
 const tree = document.getElementById("tree");
-const editBtn = document.getElementById("edit-btn");
 const saveBtn = document.getElementById("save-btn");
 const cancelBtn = document.getElementById("cancel-btn");
 const apiError = document.getElementById("api-error");
@@ -76,16 +70,16 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 // ── App entry point ─────────────────────────────────────────────
 
 (async function main() {
-  // Start WASM loading immediately (large download, runs in parallel with auth)
   const fzhReady = initFzhTerminal(fzhTerminal);
 
-  // Terminal is the default view — fzt starts in tree mode
   tree.classList.add("hidden");
   setTerminalActive(true);
 
   // Wire up fzt action callback
   onTerminalAction(async (action, url) => {
     if (action.startsWith("select:") && url) {
+      if (url === "homectl:edit") { enterEditMode(); return; }
+      if (url === "homectl:logout") { logout(); return; }
       window.location.href = ensureAbsoluteUrl(url);
     } else if (action === "copy-yaml") {
       const yaml = bookmarksToYaml(currentBookmarks);
@@ -122,122 +116,44 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
   const cached = loadCachedBookmarks();
 
-  // If we have cached data, paint immediately.
-  if (cached) {
-    loadingEl.classList.add("hidden");
-    appEl.classList.remove("hidden");
-    currentBookmarks = cached;
-    fzhReady.then(() => loadFzhBookmarks(cached));
-  } else {
-    loadingEl.classList.remove("hidden");
-  }
-
-  // Handle MSAL redirect response and check for stored token.
-  await initAuth();
-
   if (isAuthenticated()) {
-    await showApp(cached, fzhReady);
+    userAuthenticated = true;
+    playgroundMode = false;
+
+    // Load cached settings and apply background
+    let settings = loadCachedSettings();
+    if (!settings) {
+      try {
+        settings = await fetchSettings();
+        saveCachedSettings(settings);
+      } catch { settings = {}; }
+    }
+    if (settings.backgroundUrl) {
+      document.body.style.backgroundImage = `url(${settings.backgroundUrl})`;
+    }
+
+    // Fetch fresh bookmarks
+    const cached = loadCachedBookmarks();
+    if (cached) {
+      currentBookmarks = cached;
+      fzhReady.then(() => loadFzhBookmarks(cached));
+    }
+    const fresh = await fetchBookmarks();
+    saveCachedBookmarks(fresh);
+    currentBookmarks = fresh;
+    renderBookmarks(fresh);
+    fzhReady.then(() => loadFzhBookmarks(fresh));
   } else {
-    showLogin(fzhReady);
+    // Playground mode — no auth, local-only bookmarks
+    userAuthenticated = false;
+    playgroundMode = true;
+    const saved = loadPlaygroundBookmarks();
+    currentBookmarks = (saved && saved.length > 0) ? saved : deepClone(SAMPLE_BOOKMARKS);
+    savePlaygroundBookmarks(currentBookmarks);
+    renderBookmarks(currentBookmarks);
+    fzhReady.then(() => loadFzhBookmarks(currentBookmarks));
   }
 })();
-
-// ── Auth flows ──────────────────────────────────────────────────
-
-function showLogin(fzhReady) {
-  userAuthenticated = false;
-  playgroundMode = true;
-  loadingEl.classList.add("hidden");
-  appEl.classList.remove("hidden");
-  document.getElementById("user-bar").classList.remove("hidden");
-  // Show anonymous profile with placeholder avatar
-  document.getElementById("user-email").textContent = "Anonymous";
-  document.getElementById("user-avatar").src = "https://www.gravatar.com/avatar/?s=192&d=mp";
-  localStorage.removeItem("user_display");
-  clearCachedSettings();
-  document.getElementById("display-toggle-section").classList.add("hidden");
-  logoutBtn.classList.add("hidden");
-  loginPicker.classList.remove("hidden");
-  accountDropdown.classList.add("hidden");
-
-  // Load playground bookmarks (persisted locally or use samples)
-  const saved = loadPlaygroundBookmarks();
-  currentBookmarks = (saved && saved.length > 0) ? saved : deepClone(SAMPLE_BOOKMARKS);
-  savePlaygroundBookmarks(currentBookmarks);
-  renderBookmarks(currentBookmarks);
-  if (fzhReady) fzhReady.then(() => loadFzhBookmarks(currentBookmarks));
-}
-
-async function showApp(alreadyRenderedCache, fzhReady) {
-  userAuthenticated = true;
-  playgroundMode = false;
-  loadingEl.classList.add("hidden");
-  appEl.classList.remove("hidden");
-  document.getElementById("user-bar").classList.remove("hidden");
-  loginPicker.classList.add("hidden");
-  logoutBtn.classList.remove("hidden");
-  accountDropdown.classList.add("hidden");
-  clearPlaygroundBookmarks();
-  if (editMode) exitEditMode();
-
-  // Show user info
-  const user = getUser();
-  const email = user?.email || "";
-  const displayName = user?.name || email || "";
-
-  // Load cached settings or fetch from backend on first visit
-  let cachedSettings = loadCachedSettings();
-  if (!cachedSettings && !alreadyRenderedCache) {
-    try {
-      cachedSettings = await fetchSettings();
-      saveCachedSettings(cachedSettings);
-    } catch { cachedSettings = {}; }
-  }
-  if (!cachedSettings) cachedSettings = {};
-  const showEmail = !!(cachedSettings.showEmail && email);
-
-  const displayText = showEmail ? email : displayName;
-  document.getElementById("user-email").textContent = displayText;
-
-  let avatarUrl = "";
-  if (email) {
-    const hash = await sha256(email.trim().toLowerCase());
-    avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=192&d=identicon`;
-    document.getElementById("user-avatar").src = avatarUrl;
-  } else {
-    document.getElementById("user-avatar").src = "https://www.gravatar.com/avatar/?s=192&d=mp";
-  }
-  localStorage.setItem("user_display", JSON.stringify({ name: displayName, email: email || null, showEmail, avatar: avatarUrl }));
-
-  // Show display toggle for users who have both a name and an email
-  const displayToggleSection = document.getElementById("display-toggle-section");
-  const userEmailEl = document.getElementById("user-email");
-  const userBtnEl = document.getElementById("user-btn");
-  if (email && displayName && email !== displayName) {
-    displayToggleSection.classList.remove("hidden");
-    document.getElementById("display-toggle-btn").textContent = showEmail ? "Show display name" : "Show email";
-
-    // Lock user-btn width to the wider of the two values so toggling doesn't resize
-    const current = userEmailEl.textContent;
-    userBtnEl.style.minWidth = "";
-    userEmailEl.textContent = displayName;
-    const nameW = userBtnEl.offsetWidth;
-    userEmailEl.textContent = email;
-    const emailW = userBtnEl.offsetWidth;
-    userBtnEl.style.minWidth = Math.max(nameW, emailW) + "px";
-    userEmailEl.textContent = current;
-  } else {
-    displayToggleSection.classList.add("hidden");
-    userBtnEl.style.minWidth = "";
-  }
-
-  // Always fetch fresh bookmarks on login to ensure sync across devices/domains
-  const fresh = await fetchBookmarks();
-  saveCachedBookmarks(fresh);
-  currentBookmarks = fresh;
-  renderBookmarks(fresh);
-  if (fzhReady) fzhReady.then(() => loadFzhBookmarks(fresh));
-}
 
 function showApiError(msg) {
   apiError.textContent = msg;
@@ -607,15 +523,6 @@ function buildBookmarkMap(bookmarks, parentPath = '') {
 
 // ── SHA-256 helper (for Gravatar) ────────────────────────────────
 
-async function sha256(str) {
-  const buf = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(str)
-  );
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 // ── Deep clone helper ───────────────────────────────────────────
 
@@ -999,8 +906,9 @@ function startInlineEdit(row, item, parentArray) {
   nameInput.select();
 
   function confirm() {
-    const name = nameInput.value.trim();
+    const name = nameInput.value.trim().replace(/ /g, "-");
     if (!name) return; // don't allow empty name
+    if (/ /.test(nameInput.value.trim())) nameInput.value = name; // show the fix
     item.name = name;
     const url = urlInput.value.trim();
     if (url) {
@@ -1035,7 +943,7 @@ function startInlineEdit(row, item, parentArray) {
 // ── Edit mode: mutations ────────────────────────────────────────
 
 function addNode(parentArray, index) {
-  const newItem = { name: "New bookmark", url: "" };
+  const newItem = { name: "new-bookmark", url: "" };
   parentArray.splice(index, 0, newItem);
   reRenderEdit();
 
@@ -1043,7 +951,7 @@ function addNode(parentArray, index) {
     const nodes = tree.querySelectorAll(".node");
     for (const node of nodes) {
       const label = node.querySelector(".node-label");
-      if (label && label.textContent.includes("New bookmark")) {
+      if (label && label.textContent.includes("new-bookmark")) {
         const editPencil = node.querySelector(".edit-actions button");
         if (editPencil) editPencil.click();
         break;
@@ -1082,7 +990,6 @@ function enterEditMode() {
   editMode = true;
   setEditMode(true);
   editBookmarks = deepClone(currentBookmarks);
-  editBtn.classList.add("hidden");
   saveBtn.classList.remove("hidden");
   cancelBtn.classList.remove("hidden");
   reRenderEdit();
@@ -1141,7 +1048,6 @@ function exitEditMode() {
   setEditMode(false);
   editBookmarks = null;
   tree.classList.remove("edit-mode");
-  editBtn.classList.remove("hidden");
   saveBtn.classList.add("hidden");
   cancelBtn.classList.add("hidden");
   saveBtn.disabled = false;
@@ -1154,7 +1060,7 @@ function cleanBookmarks(items) {
   return items
     .filter((item) => item.name && item.name.trim())
     .map((item) => {
-      const clean = { name: item.name.trim() };
+      const clean = { name: item.name.trim().replace(/ /g, "-") };
       if (item.url && item.url.trim()) clean.url = item.url.trim();
       if (Array.isArray(item.children) && item.children.length > 0) {
         clean.children = cleanBookmarks(item.children);
@@ -1165,40 +1071,6 @@ function cleanBookmarks(items) {
 
 // ── Sync Button ──────────────────────────────────────────────────
 
-const syncBtn = document.getElementById("sync-btn");
-
-syncBtn.addEventListener("click", async () => {
-  if (playgroundMode) {
-    alert("Sync is not available in playground mode. Please log in to sync bookmarks.");
-    return;
-  }
-
-  if (editMode) {
-    alert("Please save or cancel your edits before syncing.");
-    return;
-  }
-
-  try {
-    syncBtn.disabled = true;
-    syncBtn.textContent = "⏳";
-
-    const fresh = await fetchBookmarks();
-    saveCachedBookmarks(fresh);
-    currentBookmarks = fresh;
-    renderBookmarks(fresh);
-    if (isTerminalReady()) loadFzhBookmarks(fresh);
-
-    syncBtn.disabled = false;
-    syncBtn.textContent = "🔄";
-
-    alert("Bookmarks synced successfully!");
-  } catch (err) {
-    console.error("Sync failed:", err);
-    syncBtn.disabled = false;
-    syncBtn.textContent = "🔄";
-    alert("Failed to sync bookmarks. Please try again.");
-  }
-});
 
 // ── YAML serializer ─────────────────────────────────────────────
 
@@ -1207,8 +1079,8 @@ function bookmarksToYaml(items, indent) {
   const pad = "  ".repeat(indent);
   let out = "";
   for (const item of items) {
-    out += pad + "- name: " + item.name + "\n";
-    if (item.url) out += pad + "  url: " + item.url + "\n";
+    out += pad + "- name: \"" + item.name.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
+    if (item.url) out += pad + "  url: \"" + item.url.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
     if (Array.isArray(item.children) && item.children.length > 0) {
       out += pad + "  children:\n";
       out += bookmarksToYaml(item.children, indent + 2);
@@ -1277,73 +1149,7 @@ document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && editMode) { e.preventDefault(); saveEdits(); return; }
 });
 
-editBtn.addEventListener("click", enterEditMode);
 saveBtn.addEventListener("click", saveEdits);
 cancelBtn.addEventListener("click", cancelEdits);
 
-const userBtn = document.getElementById("user-btn");
-
-userBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  accountDropdown.classList.toggle("hidden");
-  document.getElementById("user-bar").classList.toggle("open", !accountDropdown.classList.contains("hidden"));
-});
-
-accountDropdown.addEventListener("click", (e) => {
-  e.stopPropagation();
-});
-
-document.getElementById("microsoft-login-btn").addEventListener("click", () => {
-  loginWithMicrosoft();
-});
-
-document.getElementById("local-login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const errorEl = document.getElementById("local-login-error");
-  errorEl.classList.add("hidden");
-  try {
-    await loginLocal(
-      document.getElementById("local-username").value,
-      document.getElementById("local-password").value,
-    );
-    window.location.reload();
-  } catch (err) {
-    errorEl.textContent = err.message;
-    errorEl.classList.remove("hidden");
-  }
-});
-
-logoutBtn.addEventListener("click", () => {
-  logout();
-});
-
-// ── Display name toggle ──────────────────────────────────────────
-
-document.getElementById("display-toggle-btn").addEventListener("click", () => {
-  const user = getUser();
-  const email = user?.email || "";
-  const displayName = user?.name || email || "";
-  const cached = loadCachedSettings() || {};
-  const newShowEmail = !cached.showEmail;
-  const newSettings = { ...cached, showEmail: newShowEmail };
-
-  // Update display
-  document.getElementById("user-email").textContent = (newShowEmail && email) ? email : displayName;
-  document.getElementById("display-toggle-btn").textContent = newShowEmail ? "Show display name" : "Show email";
-
-  // Update caches
-  saveCachedSettings(newSettings);
-  const displayCache = JSON.parse(localStorage.getItem("user_display") || "{}");
-  displayCache.showEmail = newShowEmail;
-  displayCache.email = email || null;
-  localStorage.setItem("user_display", JSON.stringify(displayCache));
-
-  // Persist to backend (fire-and-forget)
-  putSettings(newSettings).catch(() => {});
-});
-
-document.addEventListener("click", () => {
-  accountDropdown.classList.add("hidden");
-  document.getElementById("user-bar").classList.remove("open");
-});
 
