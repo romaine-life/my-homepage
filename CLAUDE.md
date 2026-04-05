@@ -21,16 +21,15 @@ Published as `@nelsong6/my-homepage-routes` to GitHub Packages. Contains bookmar
 Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go TUI runs in-browser via WebAssembly — all scoring, filtering, and rendering happens in Go; the JS side is stateless (forwards keyboard events, parses ANSI output, renders styled spans, handles row clicks).
 
 - **Layout**: Single-panel — fzt terminal fills the main content area. No side rail. The HTML tree only appears during edit mode (full-width). The old two-panel side-rail layout was removed.
-- **Unified tree+search**: fzt starts in tree view mode (`fzt.initTree`). The tree is always visible. Typing activates search — the tree auto-expands to spotlight the top match, and a flat ranked results list appears below. Escape clears query / pops scope / exits search. Three focus layers: tree → prompt → results (Tab to descend, Escape to ascend).
-- **Tree navigation**: In the tree layer, Enter toggles folder expand/collapse, Right expands (or descends to first child), Left collapses (or moves to parent). Standard tree behavior — never leaves tree focus.
-- **Scope as breadcrumb**: In prompt/results layers, Tab on a folder result or typing a folder name + Space scopes into that folder. The folder name appears as greyed-out locked text in the prompt (looks like you typed it). Backspace on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
-- **Click support**: Row `<div>` click handlers call `fzt.clickRow(row)` — fzt maps the visual row to the tree or results section. Folders toggle expand/collapse, leaves return URLs for navigation.
-- **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.initTree(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
+- **Unified tree+search**: fzt starts in tree view mode (`fzt.init`). The tree is the single navigation surface. Two modes: search mode (typing drives cursor to top match) and nav mode (arrow keys / Shift+HJKL). Enter on a folder pushes scope; Left/Right expand/collapse visually.
+- **Scope as breadcrumb**: Enter, Tab, or Space on a folder pushes scope. The folder name appears as greyed-out locked text in the prompt. Backspace/Escape on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
+- **Clipboard commands**: fzt's `:` command palette has a "tree edit" folder with "copy yaml" (copies bookmark tree to clipboard) and "paste yaml" (reads YAML from clipboard, saves via API). Replaces the old Monaco YAML editor.
+- **Click support**: Row `<div>` click handlers call `fzt.clickRow(row)` — fzt maps the visual row to a tree item. Folders push scope, leaves return URLs for navigation.
+- **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.init(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
 - **Keyboard routing**: All keys forwarded to fzt by default. Forwarding stops when `editMode` is active or focus is in an input/textarea/select.
 - **Edit mode**: Swaps from fzt terminal to HTML tree editor (existing click-based UI, full-width). Save/cancel returns to fzt.
-- **YAML editor**: Monaco editor overlays inside the fzt terminal panel (same `#main-panel`, positioned below the search bar). fzt stays visible behind it — prompt and search box peek through above. YAML editing is a web-native concern; fzt owns navigation/search, the web layer owns editing. The editor uses the same Catppuccin Mocha theme and `#181825` background as the terminal.
 - **WASM assets**: `fzt.wasm` (~4.6MB), `wasm_exec.js` (Go WASM runtime), `SymbolsNerdFontMono-Regular.ttf` (nerd font icons for folder/file glyphs)
-- **Script load order**: MSAL CDN → `wasm_exec.js` → Monaco loader → `script.js` (module). `wasm_exec.js` must load before ES modules since it defines the global `Go` constructor.
+- **Script load order**: MSAL CDN → `wasm_exec.js` → `script.js` (module). `wasm_exec.js` must load before ES modules since it defines the global `Go` constructor.
 - **fzt.wasm**: Not committed to git (gitignored). Downloaded from the latest fzt release at deploy time. For local dev: `cd D:\repos\fzt && $env:GOOS="js"; $env:GOARCH="wasm"; go build -o D:\repos\my-homepage\frontend\fzt.wasm ./cmd/wasm`
 - **ANSI parser**: `fzh-terminal.js` contains a Catppuccin Mocha 16-color palette mapping, full SGR parser (16/256/RGB color, bold/italic/dim/underline), wide character detection for nerd font icons, and a grid renderer that batches adjacent same-styled cells into single spans
 
@@ -43,6 +42,11 @@ Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/pl
 The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm` from the latest fzt GitHub release at deploy time — no WASM committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt version automatically redeploys both the showcase and this app.
 
 ## Change Log
+
+### 2026-04-05
+
+- **Replaced Monaco YAML editor with fzt clipboard commands** — removed the YAML button, Monaco editor, and all related code (`monaco-yaml.js`, CDN script tag, `openYamlEditor`/`closeYamlEditor` functions, `serializeBookmarks`/`deserializeBookmarks` wrappers, YAML editor CSS, `yamlExpanded`/`yamlEditorInstance` state). YAML editing now uses fzt's `:` → "tree edit" → "copy yaml" / "paste yaml" commands, which use the browser clipboard API. "copy yaml" serializes `currentBookmarks` to YAML via `bookmarksToYaml()` and writes to clipboard. "paste yaml" reads clipboard, parses with `yamlToBookmarks()`, cleans, and saves via the API (with conflict handling) or localStorage in playground mode.
+- **Added `.claude/launch.json`** — preview server config for `npx serve` on port 3001.
 
 ### 2026-04-04
 
