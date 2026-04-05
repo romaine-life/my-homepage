@@ -1,44 +1,32 @@
 import { CONFIG } from './config.js';
 
-const TOKEN_KEY = 'auth_token';
-
-/** Clear the stored token and reload. */
+/** Clear the auth cookie by requesting the API to expire it, then reload. */
 export function logout() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem('user_display');
-  window.location.reload();
+  // The cookie is HttpOnly so we can't clear it from JS.
+  // Navigate to an API endpoint that clears it and redirects back.
+  window.location.href = `${CONFIG.apiUrl}/auth/logout`;
 }
 
-/** Return the stored JWT, or null. */
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-/** Check whether a non-expired JWT is stored. */
-export function isAuthenticated() {
-  const token = getToken();
-  if (!token) return false;
+/**
+ * Check if the user is authenticated by making a lightweight API call.
+ * The HttpOnly cookie is sent automatically — JS never touches the token.
+ */
+export async function checkAuth() {
   try {
-    const payload = parseJwtPayload(token);
-    return payload.exp * 1000 > Date.now();
+    const res = await fetch(`${CONFIG.apiUrl}/api/settings`, {
+      credentials: 'include',
+    });
+    return res.ok;
   } catch {
     return false;
   }
 }
 
-function parseJwtPayload(token) {
-  const parts = token.split('.');
-  if (parts.length !== 3) throw new Error('Invalid JWT');
-  const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-  return JSON.parse(atob(payload));
-}
-
 // ── API helpers ─────────────────────────────────────────────────
 
 export async function fetchSettings() {
-  const token = getToken();
   const res = await fetch(`${CONFIG.apiUrl}/api/settings`, {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: 'include',
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   const data = await res.json();
@@ -46,13 +34,10 @@ export async function fetchSettings() {
 }
 
 export async function putSettings(settings) {
-  const token = getToken();
   const res = await fetch(`${CONFIG.apiUrl}/api/settings`, {
     method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ settings }),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);

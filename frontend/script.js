@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { logout, getToken, isAuthenticated, fetchSettings, putSettings } from './auth.js';
+import { logout, checkAuth, fetchSettings, putSettings } from './auth.js';
 import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
@@ -116,7 +116,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
   const cached = loadCachedBookmarks();
 
-  if (isAuthenticated()) {
+  if (await checkAuth()) {
     userAuthenticated = true;
     playgroundMode = false;
 
@@ -239,21 +239,18 @@ function clearCachedSettings() {
 
 async function fetchBookmarks() {
   try {
-    const token = getToken();
     let res = await fetch(`${CONFIG.apiUrl}/api/bookmarks`, {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
 
     if (res.status === 503) {
       await ensureBackendReady();
       res = await fetch(`${CONFIG.apiUrl}/api/bookmarks`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
     }
 
-    // Invalid/expired token — force re-login instead of showing stale data
     if (res.status === 401) {
-      logout();
       return [];
     }
 
@@ -279,18 +276,15 @@ async function fetchBookmarks() {
 }
 
 async function putBookmarks(bookmarks) {
-  const token = getToken();
   const requestBody = {
     bookmarks,
-    lastKnownVersion: lastFetchedVersion  // Include version for conflict detection
+    lastKnownVersion: lastFetchedVersion
   };
 
   let res = await fetch(`${CONFIG.apiUrl}/api/bookmarks`, {
     method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+    credentials: 'include',
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
   });
 
@@ -298,15 +292,12 @@ async function putBookmarks(bookmarks) {
     await ensureBackendReady();
     res = await fetch(`${CONFIG.apiUrl}/api/bookmarks`, {
       method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
+      credentials: 'include',
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
     });
   }
 
-  // Invalid/expired token — force re-login
   if (res.status === 401) {
     logout();
     return;

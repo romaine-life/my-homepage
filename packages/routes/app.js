@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { randomBytes } from 'crypto';
+import jwt from 'jsonwebtoken';
 
 /**
  * Creates the homepage routes as an Express router.
@@ -7,14 +9,74 @@ import { Router } from 'express';
  *   requireAuth: Function,
  *   container: import('@azure/cosmos').Container,
  *   bookmarksContainerClient: import('@azure/storage-blob').ContainerClient,
+ *   jwtSecret: string,
+ *   frontendUrl: string,
  * }} opts
  */
-export function createHomepageRoutes({ requireAuth, container, bookmarksContainerClient }) {
+export function createHomepageRoutes({ requireAuth, container, bookmarksContainerClient, jwtSecret, frontendUrl }) {
   const router = Router();
+
+  // ── One-time code store (in-memory, short-lived) ────────────────
+  const pendingCodes = new Map();
+  const CODE_TTL_MS = 30_000; // 30 seconds
 
   // Health check
   router.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  });
+
+  // ── Auth: terminal → browser cookie flow ────────────────────────
+
+  // POST /auth/code — terminal sends JWT, receives a one-time code
+  router.post('/auth/code', (req, res) => {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ error: 'token required' });
+
+    try {
+      jwt.verify(token, jwtSecret);
+    } catch {
+      return res.status(401).json({ error: 'invalid token' });
+    }
+
+    const code = randomBytes(32).toString('hex');
+    pendingCodes.set(code, { token, expires: Date.now() + CODE_TTL_MS });
+
+    // Clean up expired codes
+    for (const [k, v] of pendingCodes) {
+      if (v.expires < Date.now()) pendingCodes.delete(k);
+    }
+
+    res.json({ code });
+  });
+
+  // GET /auth/callback?code=... — browser opens this, gets a cookie, redirects
+  router.get('/auth/callback', (req, res) => {
+    const { code } = req.query;
+    if (!code) return res.status(400).send('Missing code');
+
+    const entry = pendingCodes.get(code);
+    if (!entry || entry.expires < Date.now()) {
+      pendingCodes.delete(code);
+      return res.status(401).send('Invalid or expired code');
+    }
+
+    pendingCodes.delete(code);
+
+    res.cookie('auth_token', entry.token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: '/',
+    });
+
+    res.redirect(frontendUrl || '/');
+  });
+
+  // GET /auth/logout — clear cookie and redirect
+  router.get('/auth/logout', (req, res) => {
+    res.clearCookie('auth_token', { path: '/' });
+    res.redirect(frontendUrl || '/');
   });
 
   // ── Bookmarks (Blob Storage) ────────────────────────────────────
