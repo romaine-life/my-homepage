@@ -2,15 +2,7 @@
 // Thin wrapper around the shared fzt-terminal.js component.
 // Handles bookmark serialization and edit mode integration.
 
-import { createFztTerminal } from './fzt-terminal.js';
-
-// Catppuccin Mocha 16-color palette
-const PALETTE = [
-  "#1e1e2e", "#f38ba8", "#a6e3a1", "#f9e2af",
-  "#89b4fa", "#cba6f7", "#94e2d5", "#bac2de",
-  "#585b70", "#f38ba8", "#a6e3a1", "#f9e2af",
-  "#89b4fa", "#cba6f7", "#94e2d5", "#cdd6f4",
-];
+import { createFztWeb } from './fzt-web.js';
 
 let _term = null;
 let _onAction = null;
@@ -34,11 +26,7 @@ function bookmarksToYaml(items, indent) {
 // ── Public API ─────────────────────────────────────────────────
 
 export async function initFzhTerminal(containerEl) {
-  _term = createFztTerminal(containerEl, {
-    palette: PALETTE,
-    fontFamily: '"Perfect DOS VGA 437","Cascadia Code","Fira Code","JetBrains Mono","Consolas",monospace',
-    nerdFontFamily: "'Symbols Nerd Font Mono','Perfect DOS VGA 437',monospace",
-    cursorClass: "fzt-cursor",
+  _term = createFztWeb(containerEl, {
     containerPadding: 8,
     defaultCursorPos: null,
     onAction: (action, url) => {
