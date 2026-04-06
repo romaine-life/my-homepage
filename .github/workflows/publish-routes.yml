@@ -21,6 +21,7 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
 
       - name: Publish to GitHub Packages
+        id: publish
         working-directory: packages/routes
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -29,6 +30,7 @@ jobs:
           npm version "$REGISTRY_VERSION" --no-git-tag-version --allow-same-version
           npm version patch --no-git-tag-version
           npm publish
+          echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
       - name: Trigger API rebuild
         uses: peter-evans/repository-dispatch@v3
@@ -36,4 +38,4 @@ jobs:
           token: ${{ secrets.DISPATCH_TOKEN }}
           repository: nelsong6/api
           event-type: dependency-updated
-          client-payload: '{"package": "@nelsong6/my-homepage-routes"}'
+          client-payload: '{"package": "@nelsong6/my-homepage-routes", "version": "${{ steps.publish.outputs.version }}"}'
