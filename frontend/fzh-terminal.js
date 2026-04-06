@@ -41,9 +41,10 @@ export function loadBookmarks(bookmarks) {
   if (!_term || !_term.isReady()) return;
   if (!bookmarks) return;
   if (!Array.isArray(bookmarks)) bookmarks = [];
+  if (bookmarks.length === 0) return;
 
   const yaml = bookmarksToYaml(bookmarks);
-  _term.loadYAML(yaml);
+  if (!_term.loadYAML(yaml)) return;
   _term.initSession();
 }
 

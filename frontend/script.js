@@ -138,7 +138,8 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       currentBookmarks = cached;
       fzhReady.then(() => loadFzhBookmarks(cached));
     }
-    const fresh = await fetchBookmarks();
+    const fetched = await fetchBookmarks();
+    const fresh = fetched.length > 0 ? fetched : deepClone(SAMPLE_BOOKMARKS);
     saveCachedBookmarks(fresh);
     currentBookmarks = fresh;
     renderBookmarks(fresh);
