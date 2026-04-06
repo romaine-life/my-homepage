@@ -105,3 +105,7 @@ The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-termina
 
 - **Cookie auth endpoints** — `/auth/code`, `/auth/callback`, `/auth/whoami`, `/auth/logout` are live on the API. The publish → API lockfile gap was fixed with a new `dispatch.yml` speculative build workflow in the API repo.
 - **Pipeline dependency diagram** — `/pipelines` route in infra-diagram shows the cross-repo pipeline dependency chain (fzt → my-homepage/fzt-showcase → api).
+
+### 2026-04-06
+
+- **Browser extension for Ctrl+T homepage** — New `extension/` directory containing a minimal Manifest V3 Chrome extension (`manifest.json` + `background.js`). Registers `Ctrl+Shift+H` as a keyboard shortcut via `chrome.commands` that opens `homepage.romaine.life` in a new tab. Works identically across Chrome, Chromium, and Firefox (WebExtensions API). Loaded as an unpacked extension in Chrome at `chrome://extensions`. Paired with an AutoHotkey script in `shell-config-profile-1` that remaps `Ctrl+T` → `Ctrl+Shift+H` in browser windows, so the net effect is `Ctrl+T` opens the homepage instead of a blank new tab. Solves the longstanding problem of Chrome's reserved `Ctrl+T` shortcut — browsers don't allow extensions to override it, so the OS-level remap intercepts the keypress before Chrome sees it.
