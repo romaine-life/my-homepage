@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { logout, checkAuth, fetchSettings, putSettings } from './auth.js';
+import { logout, checkAuth, fetchSettings, putSettings, fetchWhoami } from './auth.js';
 import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
@@ -143,6 +143,17 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     currentBookmarks = fresh;
     renderBookmarks(fresh);
     fzhReady.then(() => loadFzhBookmarks(fresh));
+
+    // Show logged-in user in fzt border
+    fetchWhoami().then(user => {
+      if (user?.name || user?.email) {
+        fzhReady.then(() => {
+          if (window.fzt?.setLabel) {
+            window.fzt.setLabel(user.name || user.email);
+          }
+        });
+      }
+    });
   } else {
     // Playground mode — no auth, local-only bookmarks
     userAuthenticated = false;

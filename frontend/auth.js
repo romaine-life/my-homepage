@@ -22,6 +22,22 @@ export async function checkAuth() {
   }
 }
 
+/**
+ * Fetch the logged-in user's identity from the JWT cookie.
+ * Returns { name, email } or null if not authenticated.
+ */
+export async function fetchWhoami() {
+  try {
+    const res = await fetch(`${CONFIG.apiUrl}/auth/whoami`, {
+      credentials: 'include',
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 // ── API helpers ─────────────────────────────────────────────────
 
 export async function fetchSettings() {

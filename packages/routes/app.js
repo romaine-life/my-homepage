@@ -73,6 +73,20 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
     res.redirect(frontendUrl || '/');
   });
 
+  // GET /auth/whoami — return identity from JWT cookie
+  router.get('/auth/whoami', (req, res) => {
+    const cookies = req.headers.cookie || '';
+    const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith('auth_token='));
+    if (!match) return res.status(401).json({ error: 'not authenticated' });
+
+    try {
+      const decoded = jwt.verify(match.slice('auth_token='.length), jwtSecret);
+      res.json({ name: decoded.name || null, email: decoded.email || decoded.sub });
+    } catch {
+      res.status(401).json({ error: 'invalid token' });
+    }
+  });
+
   // GET /auth/logout — clear cookie and redirect
   router.get('/auth/logout', (req, res) => {
     res.clearCookie('auth_token', { path: '/' });
