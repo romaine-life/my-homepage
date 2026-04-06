@@ -39,10 +39,11 @@ export async function initFzhTerminal(containerEl) {
 
 export function loadBookmarks(bookmarks) {
   if (!_term || !_term.isReady()) return;
-  if (!bookmarks || bookmarks.length === 0) return;
+  if (!bookmarks) return;
+  if (!Array.isArray(bookmarks)) bookmarks = [];
 
   const yaml = bookmarksToYaml(bookmarks);
-  if (!_term.loadYAML(yaml)) return;
+  _term.loadYAML(yaml);
   _term.initSession();
 }
 

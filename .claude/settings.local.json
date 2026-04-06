@@ -19,7 +19,8 @@
       "Bash(for id in 22550504545 22548026630 22528010335 22527397226 22520279914 22513022553 22511860179 22511507834 22511300953 22495870488 22476931297 22470219039)",
       "Bash(do gh run cancel $id --repo nelsong6/infra-bootstrap)",
       "Bash(done)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "mcp__Claude_Preview__preview_start"
     ],
     "additionalDirectories": [
       "D:\\Repositories\\infra-bootstrap\\bootstrap"
