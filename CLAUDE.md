@@ -4,9 +4,9 @@ Bookmark manager web app hosted at homepage.romaine.life.
 
 ## Auth
 
-Terminal-minted JWTs — no browser-side auth UI. The `at` command (`homepagelogin`) reads a profile-specific identity config (`${PROFILE_DIR}/config/homepage.yaml`), fetches the JWT signing secret (macOS Keychain on Mac, Azure Key Vault on Windows), mints a 30-day JWT, and injects it into the browser via `osascript` (Mac) or clipboard (Windows). No MSAL, no OAuth, no login forms.
+Terminal-minted JWTs — no browser-side auth UI. The `at` command (`homepagelogin`) reads a profile-specific identity config (`${PROFILE_DIR}/config/homepage-{identity}.yaml`), fetches the JWT signing secret (KWallet on Linux, macOS Keychain on Mac, Azure Key Vault on Windows), mints a 30-day JWT, exchanges it for a one-time code via the API, and opens the browser at the callback URL to set an HttpOnly cookie. No MSAL, no OAuth, no login forms.
 
-- **Three identities**: personal Microsoft (`nelson-devops-project@outlook.com`), work local (`gromaine@r1rcm.com`), and a third Microsoft account. Each gets separate bookmark sets. The profile config YAML determines which identity to use.
+- **Three identities**: `nelson` (personal, all profiles), `nelson-ea` (Engineered Arts, profile 2), `nelson-r1` (R1, profile 3). Each gets separate bookmark sets. The profile config YAML determines which identity to use.
 - **JWT claims**: `{ sub, email, name, role, iat, exp }` — signed with `api-jwt-signing-secret` from Key Vault. The API's `requireAuth` middleware verifies the signature and extracts `sub` for user identification.
 - **No browser auth fallback** — if the token is missing or expired, the app shows playground mode with sample bookmarks.
 - **Local dev port 3001** — the frontend dev server runs on port 3001 (`npx serve`). The shared API runs on port 3000.
@@ -36,7 +36,7 @@ Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go 
 
 ## Storage
 
-Bookmarks live in Azure Blob Storage (`homepageprofilepics` storage account, `bookmarks` container, private, versioned). Each user's bookmarks are a JSON blob named by sanitized userId (e.g., `microsoft_AAAAAAAAAAAAAAAAAAAAAGsy_HuYRyJF8JVl7vGARBU.yaml`). Blob versioning is enabled — every save creates a new version automatically, providing diff-like history.
+Bookmarks live in Azure Blob Storage (`homepageprofilepics` storage account, `bookmarks` container, private, versioned). Each user's bookmarks are a JSON blob named by sanitized userId (e.g., `nelson.yaml`). Blob versioning is enabled — every save creates a new version automatically, providing diff-like history.
 
 Settings live in Azure Cosmos DB (`HomepageDB`/`userdata` container). The `backgroundUrl` field in settings controls the page background image.
 
@@ -65,7 +65,13 @@ Settings and legacy data live in Azure Cosmos DB. Claude can query them directly
 
 ### Known userIds
 
-Multiple accounts exist in the container (legacy Google OAuth, local auth, Microsoft). Nelson's primary userId is `microsoft|AAAAAAAAAAAAAAAAAAAAAGsy_HuYRyJF8JVl7vGARBU` (the `nelson-devops-project@outlook.com` account via the current app registration `959bd3fa`).
+Three identities with clean sub values (migrated from legacy OAuth IDs):
+
+- `nelson` — personal (`nelson-devops-project@outlook.com`), all profiles
+- `nelson-ea` — Engineered Arts (`n.romaine@engineeredarts.com`), profile 2
+- `nelson-r1` — R1 (`gromaine@r1rcm.com`), profile 3
+
+Blob filenames match: `nelson.yaml`, `nelson-ea.yaml`, `nelson-r1.yaml`. Legacy Google OAuth accounts remain in Cosmos DB but are unused.
 
 ## Publish Pipeline
 
