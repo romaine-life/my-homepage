@@ -36,7 +36,8 @@ export async function initFzhTerminal(containerEl) {
 
   await _term.initWasm();
 
-  // Register homepage-specific commands for the : palette
+  // Register frontend identity and commands for the : palette
+  _term.setFrontend({ name: "homepage", version: "v1.0" });
   _term.addCommands([
     { name: "edit", description: "Edit bookmark tree", action: "edit" },
     { name: "logout", description: "Log out", action: "logout" },

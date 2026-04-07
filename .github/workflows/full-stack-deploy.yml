@@ -27,7 +27,7 @@ jobs:
       - name: Download fzt assets from latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release download --repo nelsong6/fzt --pattern "fzt.wasm" --pattern "fzt-terminal.js" --pattern "fzt-terminal.css" --pattern "fzt-web.js" --dir frontend --clobber
+        run: gh release download --repo nelsong6/fzt-terminal --pattern "fzt.wasm" --pattern "fzt-terminal.js" --pattern "fzt-terminal.css" --pattern "fzt-web.js" --dir frontend --clobber
 
       - name: Azure Login via OIDC
         uses: azure/login@v2
