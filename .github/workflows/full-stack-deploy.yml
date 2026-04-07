@@ -30,7 +30,7 @@ jobs:
         run: gh release download --repo nelsong6/fzt-terminal --pattern "fzt.wasm" --pattern "fzt-terminal.js" --pattern "fzt-terminal.css" --pattern "fzt-web.js" --dir frontend --clobber
 
       - name: Azure Login via OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.ARM_CLIENT_ID }}
           tenant-id: ${{ vars.ARM_TENANT_ID }}
