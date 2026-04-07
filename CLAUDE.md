@@ -28,7 +28,7 @@ Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go 
 - **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.init(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
 - **Keyboard routing**: All keys forwarded to fzt by default. Forwarding stops when `editMode` is active or focus is in an input/textarea/select.
 - **Edit mode**: Swaps from fzt terminal to HTML tree editor (existing click-based UI, full-width). Save/cancel returns to fzt.
-- **Shared assets**: `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js` — all downloaded from fzt releases at deploy time (gitignored). `fzt-web.js` provides built-in Catppuccin Mocha palette, DOS font stack, and cursor config. `fzh-terminal.js` is a thin app-specific wrapper that only overrides `containerPadding` and `defaultCursorPos`.
+- **Shared assets**: `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js` — all downloaded from fzt-terminal releases at deploy time (gitignored). `fzt-web.js` provides built-in Catppuccin Mocha palette, DOS font stack, and cursor config. `fzh-terminal.js` is a thin app-specific wrapper that only overrides `containerPadding` and `defaultCursorPos`.
 - **CRT visual style**: Shared `fzt-terminal.css` provides scanlines, vignette, rounded corners, and cursor blink. CSS variables `--fzt-bg: #181825` and `--fzt-fg: #cdd6f4` override the defaults for Catppuccin theming. DOS font (Perfect DOS VGA 437) with font-smoothing disabled.
 - **Fonts**: `PerfectDOSVGA437.ttf` (primary terminal font), `SymbolsNerdFontMono-Regular.ttf` (nerd font icons)
 - **Script load order**: `wasm_exec.js` → `script.js` (module). `wasm_exec.js` must load before ES modules since it defines the global `Go` constructor.
@@ -79,7 +79,7 @@ Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/pl
 
 ## fzt Deploy Pipeline
 
-The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt GitHub release at deploy time — none committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt version automatically redeploys both the showcase and this app.
+The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-terminal GitHub release at deploy time — none committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt-terminal's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt-terminal version automatically redeploys both the showcase and this app.
 
 ## Change Log
 
@@ -104,7 +104,7 @@ The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-termina
 #### Resolved
 
 - **Cookie auth endpoints** — `/auth/code`, `/auth/callback`, `/auth/whoami`, `/auth/logout` are live on the API. The publish → API lockfile gap was fixed with a new `dispatch.yml` speculative build workflow in the API repo.
-- **Pipeline dependency diagram** — `/pipelines` route in infra-diagram shows the cross-repo pipeline dependency chain (fzt → my-homepage/fzt-showcase → api).
+- **Pipeline dependency diagram** — `/pipelines` route in infra-diagram shows the cross-repo pipeline dependency chain (fzt-terminal → my-homepage/fzt-showcase → api).
 
 ### 2026-04-06
 
