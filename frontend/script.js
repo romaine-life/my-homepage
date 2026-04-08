@@ -20,6 +20,7 @@ let lastFetchedVersion = null;  // timestamp of last fetched bookmarks (for conf
 let originalBookmarks = [];  // original bookmarks at fetch time (for 3-way merge)
 let userAuthenticated = false;
 let playgroundMode = false;
+let pendingBookmarks = null; // fresh bookmarks from background fetch, awaiting reload
 let dragAllowed = false;
 let dragState = null;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
@@ -132,17 +133,27 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       document.body.style.backgroundImage = `url(${settings.backgroundUrl})`;
     }
 
-    // Fetch fresh bookmarks
+    // Load from cache immediately — no blocking network call, works offline
     const cached = loadCachedBookmarks();
     if (cached) {
       currentBookmarks = cached;
       fzhReady.then(() => loadFzhBookmarks(cached));
     }
-    const fresh = await fetchBookmarks();
-    saveCachedBookmarks(fresh);
-    currentBookmarks = fresh;
-    renderBookmarks(fresh);
-    fzhReady.then(() => loadFzhBookmarks(fresh));
+
+    // Background fetch — silently check for updates without blocking fzt
+    fetchBookmarks().then(fresh => {
+      if (!fresh || fresh.length === 0) return;
+      saveCachedBookmarks(fresh);
+      if (!cached) {
+        // First load with no cache — apply directly
+        currentBookmarks = fresh;
+        if (isTerminalReady()) loadFzhBookmarks(fresh);
+      } else if (JSON.stringify(fresh) !== JSON.stringify(cached)) {
+        // New data available — stash it and show reload indicator
+        pendingBookmarks = fresh;
+        showSyncIndicator();
+      }
+    }).catch(() => { /* offline — cache is fine */ });
 
     // Show logged-in user in fzt border
     fetchWhoami().then(user => {
@@ -173,6 +184,34 @@ function showApiError(msg) {
 
 function hideApiError() {
   apiError.classList.add("hidden");
+}
+
+// ── Sync indicator ──────────────────────────────────────────────
+
+function showSyncIndicator() {
+  let dot = document.getElementById("sync-indicator");
+  if (!dot) {
+    dot = document.createElement("div");
+    dot.id = "sync-indicator";
+    dot.title = "New bookmarks available — click to reload";
+    dot.addEventListener("click", applySyncedBookmarks);
+    document.body.appendChild(dot);
+  }
+  dot.classList.remove("hidden");
+}
+
+function applySyncedBookmarks() {
+  if (!pendingBookmarks) return;
+  currentBookmarks = pendingBookmarks;
+  pendingBookmarks = null;
+  const dot = document.getElementById("sync-indicator");
+  if (dot) dot.classList.add("hidden");
+  if (editMode) {
+    editBookmarks = deepClone(currentBookmarks);
+    reRenderEdit();
+  } else if (isTerminalReady()) {
+    loadFzhBookmarks(currentBookmarks);
+  }
 }
 
 // ── localStorage helpers ────────────────────────────────────────
@@ -743,10 +782,12 @@ function renderList(items, depth, parentArray) {
     pre.textContent = "    ".repeat(depth);
     row.appendChild(pre);
 
-    // Nerd font icon (folder or file)
+    // Nerd font icon (folder or file, linked-folder for refs)
+    const isRef = !!item._ref;
     const icon = document.createElement("span");
     icon.className = "node-icon " + (hasChildren ? "folder-icon" : "file-icon");
-    icon.textContent = hasChildren ? "\uDB80\uDE4B" : "\uF016";  // nerd font folder U+F024B / file U+F016
+    icon.textContent = (isRef && hasChildren) ? "\uDB80\uDDA2" : hasChildren ? "\uDB80\uDE4B" : "\uF016";  // nerd font linked-folder U+F0DA2 / folder U+F024B / file U+F016
+    if (isRef) row.classList.add("ref-node");
     row.appendChild(icon);
 
     // Label
@@ -1019,6 +1060,9 @@ async function saveEdits() {
       const finalBookmarks = result.merged ? result.bookmarks : cleaned;
       saveCachedBookmarks(finalBookmarks);
       currentBookmarks = finalBookmarks;
+      pendingBookmarks = null;
+      const dot = document.getElementById("sync-indicator");
+      if (dot) dot.classList.add("hidden");
       exitEditMode();
       renderBookmarks(currentBookmarks);
       if (isTerminalReady()) loadFzhBookmarks(currentBookmarks);
@@ -1060,13 +1104,18 @@ function exitEditMode() {
 
 function cleanBookmarks(items) {
   return items
-    .filter((item) => item.name && item.name.trim())
+    .filter((item) => (item.name && item.name.trim()) || item.ref || item._ref)
     .map((item) => {
+      // Ref pointer (unresolved) — pass through as-is
+      if (item.ref && !item._ref) return { ref: item.ref };
       const clean = { name: item.name.trim().replace(/ /g, "-") };
       if (item.url && item.url.trim()) clean.url = item.url.trim();
       if (Array.isArray(item.children) && item.children.length > 0) {
         clean.children = cleanBookmarks(item.children);
       }
+      // Preserve ref metadata through edits
+      if (item._ref) clean._ref = item._ref;
+      if (item._refVersion) clean._refVersion = item._refVersion;
       return clean;
     });
 }
@@ -1081,6 +1130,16 @@ function bookmarksToYaml(items, indent) {
   const pad = "  ".repeat(indent);
   let out = "";
   for (const item of items) {
+    // Resolved ref node — serialize as compact ref pointer
+    if (item._ref) {
+      out += pad + "- ref: \"" + item._ref.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
+      continue;
+    }
+    // Unresolved ref pointer
+    if (item.ref) {
+      out += pad + "- ref: \"" + item.ref.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
+      continue;
+    }
     out += pad + "- name: \"" + item.name.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
     if (item.url) out += pad + "  url: \"" + item.url.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
     if (Array.isArray(item.children) && item.children.length > 0) {
@@ -1097,6 +1156,13 @@ function yamlToBookmarks(text) {
   const lines = text.split("\n").filter((l) => l.trim() !== "");
   let pos = 0;
 
+  function stripQuotes(s) {
+    if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
+      return s.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+    return s;
+  }
+
   function parseList(baseIndent) {
     const items = [];
     while (pos < lines.length) {
@@ -1104,11 +1170,19 @@ function yamlToBookmarks(text) {
       const indent = line.search(/\S/);
       if (indent < baseIndent) break;
 
+      // Ref pointer: - ref: "shared-google"
+      const refMatch = line.match(/^(\s*)- ref:\s*(.+)/);
+      if (refMatch && refMatch[1].length === baseIndent) {
+        items.push({ ref: stripQuotes(refMatch[2].trim()) });
+        pos++;
+        continue;
+      }
+
       const nameMatch = line.match(/^(\s*)- name:\s*(.+)/);
       if (!nameMatch) break;
       if (nameMatch[1].length !== baseIndent) break;
 
-      const item = { name: nameMatch[2].trim() };
+      const item = { name: stripQuotes(nameMatch[2].trim()) };
       pos++;
 
       const propIndent = baseIndent + 2;
@@ -1122,7 +1196,7 @@ function yamlToBookmarks(text) {
 
         const urlMatch = trimmed.match(/^url:\s*(.+)/);
         if (urlMatch) {
-          item.url = urlMatch[1].trim();
+          item.url = stripQuotes(urlMatch[1].trim());
           pos++;
           continue;
         }

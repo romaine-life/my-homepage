@@ -100,32 +100,117 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
     return userId.replace(/[|]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') + '.yaml';
   }
 
-  // GET /api/bookmarks — read bookmark YAML from blob storage
+  // Read a JSON blob by name. Returns { data, lastModified } or null.
+  async function readBlob(name) {
+    const blob = bookmarksContainerClient.getBlobClient(name);
+    const props = await blob.getProperties().catch(() => null);
+    if (!props) return null;
+    const download = await blob.download(0);
+    const chunks = [];
+    for await (const chunk of download.readableStreamBody) {
+      chunks.push(chunk);
+    }
+    return {
+      data: JSON.parse(Buffer.concat(chunks).toString('utf-8')),
+      lastModified: props.lastModified,
+    };
+  }
+
+  // Write a JSON blob by name. Returns { lastModified }.
+  async function writeBlob(name, data) {
+    const blob = bookmarksContainerClient.getBlockBlobClient(name);
+    const content = JSON.stringify(data);
+    await blob.upload(content, content.length, {
+      blobHTTPHeaders: { blobContentType: 'application/json' },
+    });
+    const props = await blob.getProperties();
+    return { lastModified: props.lastModified };
+  }
+
+  // Resolve ref nodes in a bookmark tree. Each { ref: "name" } node is replaced
+  // with the contents of the referenced blob, tagged with _ref and _refVersion
+  // metadata so the PUT handler can decompose edits back to source blobs.
+  async function resolveRefs(bookmarks, visited = new Set()) {
+    const resolved = [];
+    for (const item of bookmarks) {
+      if (item.ref && Object.keys(item).filter(k => k !== '_refError').length === 1) {
+        if (visited.has(item.ref) || visited.size >= 10) {
+          resolved.push({ ...item, _refError: true });
+          continue;
+        }
+        const result = await readBlob(item.ref + '.yaml');
+        if (!result) {
+          resolved.push({ ...item, _refError: true });
+          continue;
+        }
+        const node = { ...result.data, _ref: item.ref, _refVersion: result.lastModified.toISOString() };
+        // Recursively resolve refs within the referenced tree
+        if (Array.isArray(node.children) && node.children.length > 0) {
+          const childVisited = new Set(visited);
+          childVisited.add(item.ref);
+          node.children = await resolveRefs(node.children, childVisited);
+        }
+        resolved.push(node);
+      } else {
+        // Regular node — recursively resolve children
+        if (Array.isArray(item.children) && item.children.length > 0) {
+          item.children = await resolveRefs(item.children, visited);
+        }
+        resolved.push(item);
+      }
+    }
+    return resolved;
+  }
+
+  // Decompose a resolved bookmark tree back into user-owned nodes and ref writes.
+  // Nodes with _ref metadata are extracted: the subtree (without _ref/_refVersion)
+  // becomes a ref blob write, and the node is replaced with { ref: "name" }.
+  function decomposeRefs(bookmarks) {
+    const refWrites = [];
+
+    function walk(items) {
+      return items.map(item => {
+        if (item._ref) {
+          const ref = item._ref;
+          const expectedVersion = item._refVersion;
+          // Strip metadata, extract the subtree for writing to the ref blob
+          const { _ref, _refVersion, ...data } = item;
+          // Recursively decompose nested refs within this subtree
+          if (Array.isArray(data.children) && data.children.length > 0) {
+            data.children = walk(data.children);
+          }
+          refWrites.push({ ref, data, expectedVersion });
+          return { ref };
+        }
+        // Regular node — recurse into children
+        if (Array.isArray(item.children) && item.children.length > 0) {
+          return { ...item, children: walk(item.children) };
+        }
+        return item;
+      });
+    }
+
+    const userTree = walk(bookmarks);
+    return { userTree, refWrites };
+  }
+
+  // GET /api/bookmarks — read bookmark JSON from blob storage, resolve refs
   router.get('/api/bookmarks', requireAuth, async (req, res) => {
     try {
-      const blob = bookmarksContainerClient.getBlobClient(blobName(req.user.sub));
-      const props = await blob.getProperties().catch(() => null);
-      if (!props) {
+      const result = await readBlob(blobName(req.user.sub));
+      if (!result) {
         return res.json({ bookmarks: [], updatedAt: null });
       }
 
-      const download = await blob.download(0);
-      const chunks = [];
-      for await (const chunk of download.readableStreamBody) {
-        chunks.push(chunk);
-      }
-      const yaml = Buffer.concat(chunks).toString('utf-8');
-
-      // The blob stores a JSON-serialized bookmarks array
-      const bookmarks = JSON.parse(yaml);
-      res.json({ bookmarks, updatedAt: props.lastModified.toISOString() });
+      const bookmarks = await resolveRefs(result.data);
+      res.json({ bookmarks, updatedAt: result.lastModified.toISOString() });
     } catch (error) {
       console.error('Error fetching bookmarks:', error);
       res.status(500).json({ error: 'Failed to fetch bookmarks', message: error.message });
     }
   });
 
-  // PUT /api/bookmarks — write bookmark JSON to blob storage (versioned automatically)
+  // PUT /api/bookmarks — decompose refs, write ref blobs, save user tree
   router.put('/api/bookmarks', requireAuth, async (req, res) => {
     try {
       const { bookmarks, lastKnownVersion } = req.body;
@@ -134,38 +219,54 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
         return res.status(400).json({ error: 'Request body must contain a bookmarks array' });
       }
 
-      const blob = bookmarksContainerClient.getBlockBlobClient(blobName(req.user.sub));
+      const userBlobName = blobName(req.user.sub);
 
-      // Conflict detection via blob last-modified
+      // Conflict detection on the user's own blob
       if (lastKnownVersion) {
-        const props = await blob.getProperties().catch(() => null);
-        if (props) {
-          const currentVersion = props.lastModified.getTime();
+        const current = await readBlob(userBlobName);
+        if (current) {
+          const currentVersion = current.lastModified.getTime();
           const clientVersion = new Date(lastKnownVersion).getTime();
           if (currentVersion > clientVersion) {
-            const download = await blob.download(0);
-            const chunks = [];
-            for await (const chunk of download.readableStreamBody) {
-              chunks.push(chunk);
-            }
-            const currentBookmarks = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+            const currentBookmarks = await resolveRefs(current.data);
             return res.status(409).json({
               error: 'Conflict detected',
               message: 'Bookmarks have been modified elsewhere. Please merge changes.',
               currentBookmarks,
-              currentVersion: props.lastModified.toISOString(),
+              currentVersion: current.lastModified.toISOString(),
             });
           }
         }
       }
 
-      const content = JSON.stringify(bookmarks);
-      await blob.upload(content, content.length, {
-        blobHTTPHeaders: { blobContentType: 'application/json' },
-      });
+      // Decompose resolved refs back into pointers + ref blob writes
+      const { userTree, refWrites } = decomposeRefs(bookmarks);
 
-      const props = await blob.getProperties();
-      res.json({ bookmarks, updatedAt: props.lastModified.toISOString() });
+      // Check ref blob versions and write changed refs
+      for (const rw of refWrites) {
+        if (rw.expectedVersion) {
+          const current = await readBlob(rw.ref + '.yaml');
+          if (current) {
+            const currentVersion = current.lastModified.getTime();
+            const clientVersion = new Date(rw.expectedVersion).getTime();
+            if (currentVersion > clientVersion) {
+              return res.status(409).json({
+                error: 'Ref conflict',
+                message: `Shared bookmark "${rw.ref}" was modified elsewhere.`,
+                ref: rw.ref,
+              });
+            }
+          }
+        }
+        await writeBlob(rw.ref + '.yaml', rw.data);
+      }
+
+      // Save the user's tree (contains { ref } pointers, not expanded data)
+      const { lastModified } = await writeBlob(userBlobName, userTree);
+
+      // Re-resolve and return the full tree so the frontend has fresh _refVersions
+      const resolved = await resolveRefs(userTree);
+      res.json({ bookmarks: resolved, updatedAt: lastModified.toISOString() });
     } catch (error) {
       console.error('Error saving bookmarks:', error);
       res.status(500).json({ error: 'Failed to save bookmarks', message: error.message });

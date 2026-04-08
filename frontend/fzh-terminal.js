@@ -7,7 +7,11 @@ import { createFztWeb } from './fzt-web.js';
 let _term = null;
 let _onAction = null;
 
-// ── Bookmarks → YAML serializer ────────────────────────────────
+// ── Bookmarks → YAML serializer (for fzt WASM loading) ────────
+// NOTE: This copy does NOT handle ref nodes (_ref, ref) — it only
+// sees fully resolved bookmarks. The script.js copy handles ref
+// serialization for clipboard export and cloud save. Both must
+// stay in sync on the base format (name, url, children, escaping).
 function bookmarksToYaml(items, indent) {
   indent = indent || 0;
   const pad = "  ".repeat(indent);

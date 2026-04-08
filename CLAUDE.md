@@ -19,6 +19,8 @@ Published as `@nelsong6/my-homepage-routes` to GitHub Packages. Contains setting
 
 Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go TUI runs in-browser via WebAssembly — all scoring, filtering, and rendering happens in Go; the JS side is stateless (forwards keyboard events, parses ANSI output, renders styled spans, handles row clicks).
 
+Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree.go`; WASM bridge API in `fzt-terminal/cmd/wasm/main.go`; ancestor matching design (why bookmark names in different folders don't collide) in `fzt/CLAUDE.md` "Ancestor matching eliminates name collisions".
+
 - **Layout**: Single-panel — fzt terminal fills the main content area. No side rail. The HTML tree only appears during edit mode (full-width). The old two-panel side-rail layout was removed.
 - **Unified tree+search**: fzt starts in tree view mode (`fzt.init`). The tree is the single navigation surface. Two modes: search mode (typing drives cursor to top match) and nav mode (arrow keys / Shift+HJKL). Enter, Right, and Space on a folder all push scope — unified behavior regardless of input mode.
 - **Scope as breadcrumb**: Enter, Right, Tab, or Space on a folder pushes scope. The folder name appears as greyed-out locked text in the prompt. Backspace/Escape on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
@@ -39,6 +41,48 @@ Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go 
 Bookmarks live in Azure Blob Storage (`homepageprofilepics` storage account, `bookmarks` container, private, versioned). Each user's bookmarks are a JSON blob named by sanitized userId (e.g., `nelson.yaml`). Blob versioning is enabled — every save creates a new version automatically, providing diff-like history.
 
 Settings live in Azure Cosmos DB (`HomepageDB`/`userdata` container). The `backgroundUrl` field in settings controls the page background image.
+
+## Bookmark Ref System
+
+Refs enable shared bookmarks across identities. A bookmark entry can be `{ ref: "shared-google" }` — a pointer to a separate blob (`shared-google.yaml`) in the same container. Schema rule: if `ref` is present, no other properties allowed. The ref blob owns its own `name`.
+
+### Read flow (GET /api/bookmarks)
+
+1. `readBlob(userId.yaml)` fetches the user's tree
+2. `resolveRefs()` walks the tree — each `{ ref }` node is replaced with the ref blob's contents, tagged with `_ref` and `_refVersion` metadata
+3. Recursive: refs within ref blobs are resolved (visited set prevents cycles, max depth 10)
+4. Frontend receives fully expanded tree; `_ref`/`_refVersion` enable round-trip preservation
+
+### Write flow (PUT /api/bookmarks)
+
+1. `decomposeRefs()` extracts nodes with `_ref` metadata — subtree (minus metadata) becomes a ref blob write, node reverts to `{ ref }`
+2. Ref blob version conflict: if `_refVersion` is older than blob's current `lastModified`, 409 returned
+3. User's tree (with `{ ref }` pointers) saved to `userId.yaml`
+4. Response re-resolves refs for fresh `_refVersion` timestamps
+
+### Frontend ref handling
+
+- `script.js` `bookmarksToYaml()`: `_ref` nodes serialize as `- ref: "name"` (compact form). `fzh-terminal.js` copy does NOT handle refs — it only sees resolved bookmarks.
+- `script.js` `cleanBookmarks()`: preserves `_ref` and `_refVersion` metadata through edits
+- `script.js` `yamlToBookmarks()`: parses `- ref: "name"` lines
+- HTML tree editor: ref folders shown with green linked-folder icon (`.ref-node` CSS class)
+
+## Background Fetch Model
+
+Cache-first rendering with non-blocking background sync. The user sees bookmarks instantly from localStorage; fresh data loads silently.
+
+1. Load `cached_bookmarks` from localStorage, render immediately in fzt
+2. `fetchBookmarks()` fires as a detached promise (non-blocking)
+3. If fresh data differs from cache: stash in `pendingBookmarks`, show green sync indicator (bottom-right dot)
+4. User clicks indicator -> `applySyncedBookmarks()` swaps in fresh data
+5. First-time users (no cache): background fetch applies directly
+6. Offline: catch swallows the error, cache is fine
+
+After a save, `pendingBookmarks` is cleared and the indicator hidden to prevent stale state.
+
+## AT (fzt-automate) Convergence
+
+The `fzt-automate` binary and the homepage web app both consume fzt-terminal. AT reads local YAML menus + cloud-synced bookmarks (via file reference to a cache populated by `syncbookmarks`). The homepage reads from the API. Both share the same bookmark data in Azure Blob Storage — the ref system means shared folders (like a Google folder) appear in both AT and the browser. AT identity management (`:load`, `:setsecret`, `:syncbookmarks`, `:whoami`) lives in fzt's command palette, not the menu tree.
 
 ## Cosmos DB Direct Access
 
@@ -110,3 +154,11 @@ The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-termina
 
 - **Browser extension for Ctrl+T homepage** — New `extension/` directory containing a minimal Manifest V3 Chrome extension (`manifest.json` + `background.js`). Registers `Ctrl+Shift+H` as a keyboard shortcut via `chrome.commands` that opens `homepage.romaine.life` in a new tab. Works identically across Chrome, Chromium, and Firefox (WebExtensions API). Loaded as an unpacked extension in Chrome at `chrome://extensions`. Paired with an AutoHotkey script in `shell-config-profile-1` that remaps `Ctrl+T` → `Ctrl+Shift+H` in browser windows, so the net effect is `Ctrl+T` opens the homepage instead of a blank new tab. Solves the longstanding problem of Chrome's reserved `Ctrl+T` shortcut — browsers don't allow extensions to override it, so the OS-level remap intercepts the keypress before Chrome sees it.
 - **Frontend-registered `:` commands** — Homepage commands (edit, logout, copy yaml, paste yaml) moved from fzt's hardcoded `commands.go` to `fzh-terminal.js` via `fzt.addCommands()`. Called after WASM init but before session start. Core fzt commands (version, update) are now nested behind `::` in the palette. This is the first use of fzt-core's new `FrontendCommands` API — each frontend owns its command list.
+
+### 2026-04-08
+
+- **Bookmark ref system** — cross-user shared bookmarks via blob storage pointers. A bookmark entry `{ ref: "shared-google" }` points to a separate blob. API resolves refs on GET (expands inline with `_ref`/`_refVersion` metadata), decomposes on PUT (writes edits back to source blobs, stores pointer in user blob). Version conflict detection on ref blobs. Schema rule: if `ref` present, no other properties allowed. Motivated by wanting the same Google bookmarks folder across nelson, nelson-ea, nelson-r1 identities.
+- **Background fetch model** — cache-first rendering with non-blocking background sync. Page loads from localStorage cache instantly (works offline). `fetchBookmarks()` fires as a detached promise. If fresh data differs from cache, stashed in `pendingBookmarks` with green sync indicator (bottom-right dot). Click applies. Motivated by keeping fzt startup snappy — no network call blocks the first render.
+- **YAML parser stripQuotes** — `yamlToBookmarks()` now strips surrounding quotes and unescapes backslash/quote sequences. Fixes round-trip corruption for protocol URIs like `spotify:`.
+- **Ref-aware serialization** — `bookmarksToYaml()` serializes `_ref` nodes as `- ref: "name"` (compact form). `cleanBookmarks()` preserves `_ref`/`_refVersion` metadata through edits. `yamlToBookmarks()` parses `- ref:` lines. HTML tree shows ref folders with green linked-folder nerd font icon (`.ref-node` CSS class).
+- **AT convergence** — documented plan for fzt-automate to share bookmark data via blob storage. AT's `syncbookmarks` fetches from the homepage API and writes to a local cache file referenced by root.yaml's `children:` file pointer mechanism.
