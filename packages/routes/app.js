@@ -273,6 +273,60 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
     }
   });
 
+  // ── Menu (Blob Storage) ─────────────────────────────────────────
+  // Full menu tree per identity. Used by fzt-automate and any future consumer.
+  // Blob naming: menu-{userId}.yaml (separate from bookmarks).
+
+  function menuBlobName(userId) {
+    return 'menu-' + userId.replace(/[|]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') + '.yaml';
+  }
+
+  // GET /api/menu — fetch the full menu tree for the authenticated user
+  router.get('/api/menu', requireAuth, async (req, res) => {
+    try {
+      const userId = req.user.sub;
+      const result = await readBlob(menuBlobName(userId));
+      if (!result) {
+        return res.json({ menu: [], updatedAt: null });
+      }
+      res.json({ menu: result.data, updatedAt: result.lastModified.toISOString() });
+    } catch (error) {
+      console.error('Error fetching menu:', error);
+      res.status(500).json({ error: 'Failed to fetch menu', message: error.message });
+    }
+  });
+
+  // PUT /api/menu — save the full menu tree
+  router.put('/api/menu', requireAuth, async (req, res) => {
+    try {
+      const userId = req.user.sub;
+      const { menu, lastKnownVersion } = req.body;
+
+      if (!Array.isArray(menu)) {
+        return res.status(400).json({ error: 'Request body must contain a menu array' });
+      }
+
+      // Conflict detection
+      if (lastKnownVersion) {
+        const current = await readBlob(menuBlobName(userId));
+        if (current && current.lastModified > new Date(lastKnownVersion)) {
+          return res.status(409).json({
+            error: 'Conflict detected',
+            message: 'Menu has been modified elsewhere.',
+            currentMenu: current.data,
+            currentVersion: current.lastModified.toISOString(),
+          });
+        }
+      }
+
+      const { lastModified } = await writeBlob(menuBlobName(userId), menu);
+      res.json({ menu, updatedAt: lastModified.toISOString() });
+    } catch (error) {
+      console.error('Error saving menu:', error);
+      res.status(500).json({ error: 'Failed to save menu', message: error.message });
+    }
+  });
+
   // ── Settings (Cosmos DB) ────────────────────────────────────────
 
   // GET /api/settings
