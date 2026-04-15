@@ -58,7 +58,7 @@ export function loadBookmarks(bookmarks) {
 
   const yaml = bookmarksToYaml(bookmarks);
   if (!_term.loadYAML(yaml)) return;
-  _term.initSession();
+  _term.init();
 }
 
 export function setEditMode(val) {
@@ -74,7 +74,7 @@ export function onAction(callback) {
 }
 
 export function sendKey(key, ctrlKey, shiftKey) {
-  if (_term) _term.sendKey(key, ctrlKey, shiftKey);
+  if (_term) _term.handleKey(key, ctrlKey, shiftKey);
 }
 
 export function isTerminalReady() {
