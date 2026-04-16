@@ -25,12 +25,12 @@ Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree
 - **Unified tree+search**: fzt starts in tree view mode (`fzt.init`). The tree is the single navigation surface. Two modes: search mode (typing drives cursor to top match) and nav mode (arrow keys / Shift+HJKL). Enter, Right, and Space on a folder all push scope — unified behavior regardless of input mode.
 - **Scope as breadcrumb**: Enter, Right, Tab, or Space on a folder pushes scope. The folder name appears as greyed-out locked text in the prompt. Backspace/Escape on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
 - **Unified prompt rendering**: Within `drawUnified`, `navMode` affects ONLY the prompt icon (arrow vs magnifying glass). All other rendering — breadcrumb, content area, cursor visibility, top match highlighting — is mode-independent, driven by `treeCursor`, `query`, `scope`, and `searchActive` state.
-- **Clipboard commands**: The homepage frontend registers "copy yaml" and "paste yaml" commands in fzt's `:` palette via `fzt.addCommands()`. Copy exports the bookmark tree to clipboard; paste reads YAML from clipboard and saves via API. Replaces the old Monaco YAML editor.
+- **Clipboard commands** (legacy, pending removal): The homepage frontend registers "copy yaml" and "paste yaml" commands in fzt's `:` palette via `fzt.addCommands()`. Copy exports the bookmark tree to clipboard; paste reads YAML from clipboard and saves via API. Not preferred — use the API directly (`GET /homepage/api/bookmarks`, `PUT /homepage/api/bookmarks`) for programmatic edits.
 - **Click support**: Row `<div>` click handlers call `fzt.clickRow(row)` — fzt maps the visual row to a tree item. Folders push scope, leaves return URLs for navigation.
 - **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.init(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
 - **Keyboard routing**: All keys forwarded to fzt by default. Forwarding stops when `editMode` is active or focus is in an input/textarea/select.
 - **Edit mode**: Swaps from fzt terminal to HTML tree editor (existing click-based UI, full-width). Save/cancel returns to fzt.
-- **Shared assets**: `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js` — all downloaded from fzt-terminal releases at deploy time (gitignored). `fzt-web.js` provides built-in Catppuccin Mocha palette, DOS font stack, and cursor config. `fzh-terminal.js` is a thin app-specific wrapper that only overrides `containerPadding` and `defaultCursorPos`.
+- **Shared assets**: `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js` — all downloaded from fzt-browser releases at deploy time (gitignored). `fzt-web.js` provides built-in Catppuccin Mocha palette, DOS font stack, and cursor config. `fzh-terminal.js` is a thin app-specific wrapper that only overrides `containerPadding` and `defaultCursorPos`.
 - **CRT visual style**: Shared `fzt-terminal.css` provides scanlines, vignette, rounded corners, and cursor blink. CSS variables `--fzt-bg: #181825` and `--fzt-fg: #cdd6f4` override the defaults for Catppuccin theming. DOS font (Perfect DOS VGA 437) with font-smoothing disabled.
 - **Fonts**: `PerfectDOSVGA437.ttf` (primary terminal font), `SymbolsNerdFontMono-Regular.ttf` (nerd font icons)
 - **Script load order**: `wasm_exec.js` → `script.js` (module). `wasm_exec.js` must load before ES modules since it defines the global `Go` constructor.
@@ -123,7 +123,9 @@ Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/pl
 
 ## fzt Deploy Pipeline
 
-The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-terminal GitHub release at deploy time — none committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt-terminal's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt-terminal version automatically redeploys both the showcase and this app.
+The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser GitHub release at deploy time — none committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt-browser's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt-browser version automatically redeploys both the showcase and this app.
+
+After deploy, the workflow writes `version.json` (containing the fzt-browser release version used), verifies it's live on CDN, then POSTs to `api.romaine.life/ci/deployed` so the CI dashboard can show which version is running in production.
 
 ## Change Log
 
