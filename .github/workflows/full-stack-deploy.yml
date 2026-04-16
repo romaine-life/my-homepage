@@ -32,7 +32,7 @@ jobs:
           gh release download --repo nelsong6/fzt-terminal --pattern "fzt.wasm" --pattern "fzt-terminal.js" --pattern "fzt-terminal.css" --pattern "fzt-web.js" --dir frontend --clobber
           FZT_VERSION=$(gh release view --repo nelsong6/fzt-terminal --json tagName -q '.tagName')
           echo "fzt_version=$FZT_VERSION" >> $GITHUB_OUTPUT
-          echo "{\"fztTerminal\":\"$FZT_VERSION\",\"deployedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > frontend/version.json
+          echo "{\"fztTerminal\":\"$FZT_VERSION\",\"sha\":\"${GITHUB_SHA::7}\",\"deployedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > frontend/version.json
           echo "Wrote version.json: fzt-terminal $FZT_VERSION"
 
       - name: Azure Login via OIDC
