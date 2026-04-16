@@ -40,11 +40,31 @@ jobs:
           tenant-id: ${{ vars.ARM_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
 
+      - name: Get GitHub App credentials
+        id: app-creds
+        run: |
+          APP_ID=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name github-app-id --query value -o tsv)
+          echo "::add-mask::$APP_ID"
+          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+          PRIVATE_KEY=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name github-app-private-key --query value -o tsv)
+          echo "::add-mask::$PRIVATE_KEY"
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "private_key<<$EOF" >> $GITHUB_OUTPUT
+          echo "$PRIVATE_KEY" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ steps.app-creds.outputs.app_id }}
+          private-key: ${{ steps.app-creds.outputs.private_key }}
+          repositories: api
+
       - name: Trigger API rebuild
         run: |
-          PAT=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name github-pat --query value -o tsv)
           curl -s -X POST \
-            -H "Authorization: token $PAT" \
+            -H "Authorization: token ${{ steps.app-token.outputs.token }}" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/nelsong6/api/dispatches \
             -d '{"event_type":"dependency-updated","client_payload":{"package":"@nelsong6/my-homepage-routes","version":"${{ steps.publish.outputs.version }}"}}'
