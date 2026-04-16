@@ -43,10 +43,10 @@ jobs:
       - name: Get GitHub App credentials
         id: app-creds
         run: |
-          APP_ID=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name github-app-id --query value -o tsv)
+          APP_ID=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name romaine-life-app-id --query value -o tsv)
           echo "::add-mask::$APP_ID"
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
-          PRIVATE_KEY=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name github-app-private-key --query value -o tsv)
+          PRIVATE_KEY=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name romaine-life-app-private-key --query value -o tsv)
           echo "::add-mask::$PRIVATE_KEY"
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "private_key<<$EOF" >> $GITHUB_OUTPUT
