@@ -48,3 +48,10 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/nelsong6/api/dispatches \
             -d '{"event_type":"dependency-updated","client_payload":{"package":"@nelsong6/my-homepage-routes","version":"${{ steps.publish.outputs.version }}"}}'
+
+      - name: Report published version to CI dashboard
+        run: |
+          curl -sf -X POST https://api.romaine.life/ci/published \
+            -H "Content-Type: application/json" \
+            -d '{"repoName":"my-homepage","version":"${{ steps.publish.outputs.version }}"}' \
+            || echo "Version report failed (non-fatal)"
