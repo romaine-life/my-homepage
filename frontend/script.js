@@ -82,6 +82,10 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       if (url === "homectl:edit") { enterEditMode(); return; }
       if (url === "homectl:logout") { logout(); return; }
       window.location.href = ensureAbsoluteUrl(url);
+    } else if (action === "edit") {
+      enterEditMode();
+    } else if (action === "logout") {
+      logout();
     } else if (action === "copy-yaml") {
       const yaml = bookmarksToYaml(currentBookmarks);
       await navigator.clipboard.writeText(yaml);
