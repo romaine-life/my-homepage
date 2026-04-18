@@ -32,12 +32,6 @@ resource "azurerm_storage_container" "profile_pictures" {
   container_access_type = "blob"
 }
 
-resource "azurerm_storage_container" "bookmarks" {
-  name                  = "bookmarks"
-  storage_account_id    = azurerm_storage_account.profile_pictures.id
-  container_access_type = "private"
-}
-
 # Grant shared API's managed identity write access to the blob container
 resource "azurerm_role_assignment" "shared_api_storage_contributor" {
   scope                = azurerm_storage_account.profile_pictures.id
