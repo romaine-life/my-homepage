@@ -13,7 +13,7 @@ Terminal-minted JWTs — no browser-side auth UI. The `at` command (`homepagelog
 
 ## Routes Package (`packages/routes/`)
 
-Published as `@nelsong6/my-homepage-routes` to GitHub Packages. Contains settings CRUD (Cosmos DB) and bookmarks CRUD (Azure Blob Storage). Receives `requireAuth`, `container` (Cosmos), and `bookmarksContainerClient` (Blob) via dependency injection from the shared API. Peer deps: `@azure/storage-blob`, `express`.
+Published as `@nelsong6/my-homepage-routes` to GitHub Packages. Contains settings CRUD (`HomepageDB.userdata`) and bookmarks CRUD (`HomepageDB.fzt-frontend-data`). Receives `requireAuth`, `container` (userdata), and `bookmarksContainer` (fzt-frontend-data) via dependency injection from the shared API. Peer dep: `@azure/cosmos`. All bookmark-related data migrated off Azure Blob Storage on 2026-04-18 in favor of Cosmos-backed append-only versioned docs — same pattern as the AT menu.
 
 ## fzt Terminal Integration
 
@@ -38,27 +38,35 @@ Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree
 
 ## Storage
 
-Bookmarks live in Azure Blob Storage (`homepageprofilepics` storage account, `bookmarks` container, private, versioned). Each user's bookmarks are a JSON blob named by sanitized userId (e.g., `nelson.yaml`). Blob versioning is enabled — every save creates a new version automatically, providing diff-like history.
+All user-facing data lives in Azure Cosmos DB — the `HomepageDB.fzt-frontend-data` container (partition key `/userId`), append-only versioned documents:
 
-Settings live in Azure Cosmos DB (`HomepageDB`/`userdata` container). The `backgroundUrl` field in settings controls the page background image.
+| `type` | `id` format | Partition (userId) | Notes |
+|---|---|---|---|
+| `bookmarks` | `bookmarks_<userId>_v<N>` | user's JWT `sub` | Per-user bookmark tree |
+| `bookmarks-shared` | `bookmarks-shared_<name>_v<N>` | `shared:<name>` | Cross-identity shared refs |
+
+Each save bumps `N`; GET returns the latest `N` per user. Version numbers replace blob-era `lastModified` timestamps for conflict detection. Pre-2026-04-18 state lived in Azure Blob Storage (`homepageprofilepics/bookmarks`, `<userId>.yaml` + `shared-<name>.yaml`); migrated and retired.
+
+Settings still live in `HomepageDB.userdata` as `type='settings'` docs (separate container). The `backgroundUrl` field in settings controls the page background image.
 
 ## Bookmark Ref System
 
-Refs enable shared bookmarks across identities. A bookmark entry can be `{ ref: "shared-google" }` — a pointer to a separate blob (`shared-google.yaml`) in the same container. Schema rule: if `ref` is present, no other properties allowed. The ref blob owns its own `name`.
+Refs enable shared bookmarks across identities. A bookmark entry can be `{ ref: "<name>" }` — a pointer to a `type='bookmarks-shared'` doc of that name. Schema rule: if `ref` is present, no other non-metadata properties allowed. The ref doc owns its own `name` on the outermost node.
 
 ### Read flow (GET /api/bookmarks)
 
-1. `readBlob(userId.yaml)` fetches the user's tree
-2. `resolveRefs()` walks the tree — each `{ ref }` node is replaced with the ref blob's contents, tagged with `_ref` and `_refVersion` metadata
-3. Recursive: refs within ref blobs are resolved (visited set prevents cycles, max depth 10)
+1. `getLatestBookmarks(userId)` queries Cosmos for the latest `bookmarks` doc
+2. `resolveRefs()` walks the tree — each `{ ref }` node is replaced with the referenced `bookmarks-shared` doc's contents, tagged with `_ref` and `_refVersion` (integer version, not timestamp)
+3. Recursive: refs within ref contents are resolved (visited set prevents cycles, max depth 10)
 4. Frontend receives fully expanded tree; `_ref`/`_refVersion` enable round-trip preservation
 
 ### Write flow (PUT /api/bookmarks)
 
-1. `decomposeRefs()` extracts nodes with `_ref` metadata — subtree (minus metadata) becomes a ref blob write, node reverts to `{ ref }`
-2. Ref blob version conflict: if `_refVersion` is older than blob's current `lastModified`, 409 returned
-3. User's tree (with `{ ref }` pointers) saved to `userId.yaml`
-4. Response re-resolves refs for fresh `_refVersion` timestamps
+1. Conflict check: `lastKnownVersion` (version number or updatedAt string) compared against latest doc; 409 with current if mismatch
+2. `decomposeRefs()` extracts nodes with `_ref` metadata — subtree (minus metadata) becomes a new `bookmarks-shared` version, node reverts to `{ ref }`
+3. Shared-ref version conflict: if client's `_refVersion` ≠ current shared doc version, 409 returned
+4. User's tree (with `{ ref }` pointers) saved as a new `bookmarks` version doc
+5. Response re-resolves refs for fresh `_refVersion` values
 
 ### Frontend ref handling
 
@@ -128,6 +136,12 @@ The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-termina
 After deploy, the workflow writes `version.json` (containing the fzt-browser release version used), verifies it's live on CDN, then POSTs to `api.romaine.life/ci/deployed` so the CI dashboard can show which version is running in production.
 
 ## Change Log
+
+### 2026-04-18
+
+- **Bookmarks migrated off Azure Blob Storage** — all bookmark data (per-user `bookmarks` + cross-identity `bookmarks-shared`) now lives in a new Cosmos container `HomepageDB.fzt-frontend-data` as append-only versioned docs. Route package signature: `bookmarksContainerClient` → `bookmarksContainer` (Cosmos). Same storage pattern as the AT menu. Blob container `homepageprofilepics/bookmarks` kept allocated as safety net pending verification, then torn down. Motivation: enable cross-service refs — the AT menu can now contain `{ ref: "bookmarks" }` that resolves at read time to the caller's homepage bookmarks (see fzt-terminal-routes ref resolver). Blob-backed isolation prevented that.
+- **Ref convention** — shared refs in stored trees drop the `shared-` prefix (was `{ ref: "shared-google" }` in blob era, now `{ ref: "google" }`). The `shared-` marker was redundant — doc `type='bookmarks-shared'` already distinguishes.
+- **Version conflict** — `_refVersion` is now an integer version number from the Cosmos doc, not a `lastModified` ISO string. Client/server compare by equality.
 
 ### 2026-04-05
 
