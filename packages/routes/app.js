@@ -7,13 +7,13 @@ import jwt from 'jsonwebtoken';
  *
  * @param {{
  *   requireAuth: Function,
- *   container: import('@azure/cosmos').Container,
- *   bookmarksContainerClient: import('@azure/storage-blob').ContainerClient,
+ *   container: import('@azure/cosmos').Container,  // HomepageDB.userdata (settings)
+ *   bookmarksContainer: import('@azure/cosmos').Container,  // HomepageDB.fzt-frontend-data (bookmarks + shared refs)
  *   jwtSecret: string,
  *   frontendUrl: string,
  * }} opts
  */
-export function createHomepageRoutes({ requireAuth, container, bookmarksContainerClient, jwtSecret, frontendUrl }) {
+export function createHomepageRoutes({ requireAuth, container, bookmarksContainer, jwtSecret, frontendUrl }) {
   const router = Router();
 
   // ── One-time code store (in-memory, short-lived) ────────────────
@@ -93,43 +93,69 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
     res.redirect(frontendUrl || '/');
   });
 
-  // ── Bookmarks (Blob Storage) ────────────────────────────────────
+  // ── Bookmarks (Cosmos DB, fzt-frontend-data container) ──────────
+  //
+  // Storage model: append-only versioned docs. Each save creates a new
+  // version doc; GET returns the latest version per user. Shared refs
+  // (bookmarks-shared docs) are partitioned by "shared:<name>" and named
+  // after the ref they satisfy.
 
-  // Sanitize userId for use as a blob name
-  function blobName(userId) {
-    return userId.replace(/[|]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') + '.yaml';
+  function bookmarksDocId(userId, version) {
+    return `bookmarks_${userId}_v${version}`;
+  }
+  function sharedDocId(name, version) {
+    return `bookmarks-shared_${name}_v${version}`;
   }
 
-  // Read a JSON blob by name. Returns { data, lastModified } or null.
-  async function readBlob(name) {
-    const blob = bookmarksContainerClient.getBlobClient(name);
-    const props = await blob.getProperties().catch(() => null);
-    if (!props) return null;
-    const download = await blob.download(0);
-    const chunks = [];
-    for await (const chunk of download.readableStreamBody) {
-      chunks.push(chunk);
-    }
-    return {
-      data: JSON.parse(Buffer.concat(chunks).toString('utf-8')),
-      lastModified: props.lastModified,
+  async function getLatestBookmarks(userId) {
+    const { resources } = await bookmarksContainer.items.query({
+      query: `SELECT TOP 1 * FROM c
+              WHERE c.type = 'bookmarks' AND c.userId = @userId
+              ORDER BY c.version DESC`,
+      parameters: [{ name: '@userId', value: userId }],
+    }).fetchAll();
+    return resources[0] || null;
+  }
+
+  async function getLatestShared(name) {
+    const partition = `shared:${name}`;
+    const { resources } = await bookmarksContainer.items.query({
+      query: `SELECT TOP 1 * FROM c
+              WHERE c.type = 'bookmarks-shared' AND c.name = @name
+              ORDER BY c.version DESC`,
+      parameters: [{ name: '@name', value: name }],
+    }, { partitionKey: partition }).fetchAll();
+    return resources[0] || null;
+  }
+
+  async function writeBookmarks(userId, bookmarks) {
+    const latest = await getLatestBookmarks(userId);
+    const nextVersion = (latest?.version || 0) + 1;
+    const now = new Date().toISOString();
+    const doc = {
+      id: bookmarksDocId(userId, nextVersion),
+      userId, type: 'bookmarks', version: nextVersion, bookmarks, updatedAt: now,
     };
+    await bookmarksContainer.items.create(doc);
+    return doc;
   }
 
-  // Write a JSON blob by name. Returns { lastModified }.
-  async function writeBlob(name, data) {
-    const blob = bookmarksContainerClient.getBlockBlobClient(name);
-    const content = JSON.stringify(data);
-    await blob.upload(content, content.length, {
-      blobHTTPHeaders: { blobContentType: 'application/json' },
-    });
-    const props = await blob.getProperties();
-    return { lastModified: props.lastModified };
+  async function writeShared(name, bookmarks) {
+    const latest = await getLatestShared(name);
+    const nextVersion = (latest?.version || 0) + 1;
+    const now = new Date().toISOString();
+    const doc = {
+      id: sharedDocId(name, nextVersion),
+      userId: `shared:${name}`, type: 'bookmarks-shared', name,
+      version: nextVersion, bookmarks, updatedAt: now,
+    };
+    await bookmarksContainer.items.create(doc);
+    return doc;
   }
 
-  // Resolve ref nodes in a bookmark tree. Each { ref: "name" } node is replaced
-  // with the contents of the referenced blob, tagged with _ref and _refVersion
-  // metadata so the PUT handler can decompose edits back to source blobs.
+  // Resolve ref nodes in a bookmark tree. Each { ref: "name" } node is
+  // replaced with the contents of the bookmarks-shared doc of that name,
+  // tagged with _ref and _refVersion so PUT can decompose edits back.
   async function resolveRefs(bookmarks, visited = new Set()) {
     const resolved = [];
     for (const item of bookmarks) {
@@ -138,13 +164,12 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
           resolved.push({ ...item, _refError: true });
           continue;
         }
-        const result = await readBlob(item.ref + '.yaml');
-        if (!result) {
+        const sharedDoc = await getLatestShared(item.ref);
+        if (!sharedDoc) {
           resolved.push({ ...item, _refError: true });
           continue;
         }
-        const node = { ...result.data, _ref: item.ref, _refVersion: result.lastModified.toISOString() };
-        // Recursively resolve refs within the referenced tree
+        const node = { ...sharedDoc.bookmarks, _ref: item.ref, _refVersion: sharedDoc.version };
         if (Array.isArray(node.children) && node.children.length > 0) {
           const childVisited = new Set(visited);
           childVisited.add(item.ref);
@@ -152,7 +177,6 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
         }
         resolved.push(node);
       } else {
-        // Regular node — recursively resolve children
         if (Array.isArray(item.children) && item.children.length > 0) {
           item.children = await resolveRefs(item.children, visited);
         }
@@ -194,23 +218,23 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
     return { userTree, refWrites };
   }
 
-  // GET /api/bookmarks — read bookmark JSON from blob storage, resolve refs
+  // GET /api/bookmarks — read latest bookmarks doc from Cosmos, resolve refs
   router.get('/api/bookmarks', requireAuth, async (req, res) => {
     try {
-      const result = await readBlob(blobName(req.user.sub));
-      if (!result) {
+      const latest = await getLatestBookmarks(req.user.sub);
+      if (!latest) {
         return res.json({ bookmarks: [], updatedAt: null });
       }
 
-      const bookmarks = await resolveRefs(result.data);
-      res.json({ bookmarks, updatedAt: result.lastModified.toISOString() });
+      const bookmarks = await resolveRefs(latest.bookmarks);
+      res.json({ bookmarks, updatedAt: latest.updatedAt });
     } catch (error) {
       console.error('Error fetching bookmarks:', error);
       res.status(500).json({ error: 'Failed to fetch bookmarks', message: error.message });
     }
   });
 
-  // PUT /api/bookmarks — decompose refs, write ref blobs, save user tree
+  // PUT /api/bookmarks — decompose refs, write shared-ref docs, save user tree
   router.put('/api/bookmarks', requireAuth, async (req, res) => {
     try {
       const { bookmarks, lastKnownVersion } = req.body;
@@ -219,54 +243,46 @@ export function createHomepageRoutes({ requireAuth, container, bookmarksContaine
         return res.status(400).json({ error: 'Request body must contain a bookmarks array' });
       }
 
-      const userBlobName = blobName(req.user.sub);
+      const userId = req.user.sub;
 
-      // Conflict detection on the user's own blob
-      if (lastKnownVersion) {
-        const current = await readBlob(userBlobName);
-        if (current) {
-          const currentVersion = current.lastModified.getTime();
-          const clientVersion = new Date(lastKnownVersion).getTime();
-          if (currentVersion > clientVersion) {
-            const currentBookmarks = await resolveRefs(current.data);
+      // Conflict detection on the user's own bookmarks doc (by version)
+      if (lastKnownVersion !== undefined && lastKnownVersion !== null) {
+        const current = await getLatestBookmarks(userId);
+        if (current && current.updatedAt !== lastKnownVersion && current.version !== lastKnownVersion) {
+          const currentBookmarks = await resolveRefs(current.bookmarks);
+          return res.status(409).json({
+            error: 'Conflict detected',
+            message: 'Bookmarks have been modified elsewhere. Please merge changes.',
+            currentBookmarks,
+            currentVersion: current.updatedAt,
+          });
+        }
+      }
+
+      // Decompose resolved refs back into pointers + shared-ref writes
+      const { userTree, refWrites } = decomposeRefs(bookmarks);
+
+      // Check shared-ref versions and write changed refs
+      for (const rw of refWrites) {
+        if (rw.expectedVersion !== undefined && rw.expectedVersion !== null) {
+          const current = await getLatestShared(rw.ref);
+          if (current && current.version !== rw.expectedVersion) {
             return res.status(409).json({
-              error: 'Conflict detected',
-              message: 'Bookmarks have been modified elsewhere. Please merge changes.',
-              currentBookmarks,
-              currentVersion: current.lastModified.toISOString(),
+              error: 'Ref conflict',
+              message: `Shared bookmark "${rw.ref}" was modified elsewhere.`,
+              ref: rw.ref,
             });
           }
         }
-      }
-
-      // Decompose resolved refs back into pointers + ref blob writes
-      const { userTree, refWrites } = decomposeRefs(bookmarks);
-
-      // Check ref blob versions and write changed refs
-      for (const rw of refWrites) {
-        if (rw.expectedVersion) {
-          const current = await readBlob(rw.ref + '.yaml');
-          if (current) {
-            const currentVersion = current.lastModified.getTime();
-            const clientVersion = new Date(rw.expectedVersion).getTime();
-            if (currentVersion > clientVersion) {
-              return res.status(409).json({
-                error: 'Ref conflict',
-                message: `Shared bookmark "${rw.ref}" was modified elsewhere.`,
-                ref: rw.ref,
-              });
-            }
-          }
-        }
-        await writeBlob(rw.ref + '.yaml', rw.data);
+        await writeShared(rw.ref, rw.data);
       }
 
       // Save the user's tree (contains { ref } pointers, not expanded data)
-      const { lastModified } = await writeBlob(userBlobName, userTree);
+      const savedDoc = await writeBookmarks(userId, userTree);
 
       // Re-resolve and return the full tree so the frontend has fresh _refVersions
-      const resolved = await resolveRefs(userTree);
-      res.json({ bookmarks: resolved, updatedAt: lastModified.toISOString() });
+      const resolved = await resolveRefs(savedDoc.bookmarks);
+      res.json({ bookmarks: resolved, updatedAt: savedDoc.updatedAt });
     } catch (error) {
       console.error('Error saving bookmarks:', error);
       res.status(500).json({ error: 'Failed to save bookmarks', message: error.message });
