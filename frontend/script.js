@@ -16,7 +16,7 @@ const SETTINGS_CACHE_KEY = "cached_settings";
 let editMode = false;
 let editBookmarks = null;   // deep clone used during editing
 let currentBookmarks = [];  // last-fetched/rendered bookmarks
-let lastFetchedVersion = null;  // timestamp of last fetched bookmarks (for conflict detection)
+let lastFetchedVersion = null;  // integer version of last fetched tree (for conflict detection)
 let originalBookmarks = [];  // original bookmarks at fetch time (for 3-way merge)
 let userAuthenticated = false;
 let playgroundMode = false;
@@ -293,13 +293,13 @@ function clearCachedSettings() {
 
 async function fetchBookmarks() {
   try {
-    let res = await fetch(`${CONFIG.apiUrl}/api/bookmarks`, {
+    let res = await fetch(`${CONFIG.apiRoot}/fzt/tree/me/bookmarks`, {
       credentials: 'include',
     });
 
     if (res.status === 503) {
       await ensureBackendReady();
-      res = await fetch(`${CONFIG.apiUrl}/api/bookmarks`, {
+      res = await fetch(`${CONFIG.apiRoot}/fzt/tree/me/bookmarks`, {
         credentials: 'include',
       });
     }
@@ -308,14 +308,22 @@ async function fetchBookmarks() {
       return [];
     }
 
+    // Fresh account — no tree yet. Empty bookmarks list is the right initial
+    // state (not an error).
+    if (res.status === 404) {
+      hideApiError();
+      lastFetchedVersion = 0;
+      originalBookmarks = [];
+      return [];
+    }
+
     if (!res.ok) throw new Error(`API error: ${res.status}`);
 
     const data = await res.json();
     hideApiError();
 
-    // Store version and original bookmarks for conflict detection
-    lastFetchedVersion = data.updatedAt;
-    const bookmarks = data.bookmarks || [];
+    lastFetchedVersion = data.version;
+    const bookmarks = data.tree || [];
     originalBookmarks = deepClone(bookmarks);
 
     return bookmarks;
@@ -331,11 +339,11 @@ async function fetchBookmarks() {
 
 async function putBookmarks(bookmarks) {
   const requestBody = {
-    bookmarks,
-    lastKnownVersion: lastFetchedVersion
+    tree: bookmarks,
+    baseVersion: lastFetchedVersion,
   };
 
-  let res = await fetch(`${CONFIG.apiUrl}/api/bookmarks`, {
+  let res = await fetch(`${CONFIG.apiRoot}/fzt/tree/me/bookmarks`, {
     method: "PUT",
     credentials: 'include',
     headers: { "Content-Type": "application/json" },
@@ -344,7 +352,7 @@ async function putBookmarks(bookmarks) {
 
   if (res.status === 503) {
     await ensureBackendReady();
-    res = await fetch(`${CONFIG.apiUrl}/api/bookmarks`, {
+    res = await fetch(`${CONFIG.apiRoot}/fzt/tree/me/bookmarks`, {
       method: "PUT",
       credentials: 'include',
       headers: { "Content-Type": "application/json" },
@@ -357,12 +365,11 @@ async function putBookmarks(bookmarks) {
     return;
   }
 
-  // Handle conflict (409) specially
   if (res.status === 409) {
     const conflictData = await res.json();
     const error = new Error(conflictData.message || 'Conflict detected');
     error.isConflict = true;
-    error.currentBookmarks = conflictData.currentBookmarks;
+    error.currentBookmarks = conflictData.currentTree;
     error.currentVersion = conflictData.currentVersion;
     throw error;
   }
@@ -370,9 +377,8 @@ async function putBookmarks(bookmarks) {
   if (!res.ok) throw new Error(`API error: ${res.status}`);
 
   const data = await res.json();
-  // Update version after successful save
-  lastFetchedVersion = data.updatedAt;
-  originalBookmarks = deepClone(data.bookmarks);
+  lastFetchedVersion = data.version;
+  originalBookmarks = deepClone(data.tree);
 
   return data;
 }
