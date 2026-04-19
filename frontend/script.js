@@ -1230,7 +1230,7 @@ function yamlToBookmarks(text) {
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
-  if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && editMode) { e.preventDefault(); saveEdits(); return; }
+  if (e.shiftKey && e.key === "Enter" && editMode) { e.preventDefault(); saveEdits(); return; }
 });
 
 saveBtn.addEventListener("click", saveEdits);
