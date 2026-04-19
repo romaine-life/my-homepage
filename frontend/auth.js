@@ -1,61 +1,66 @@
-import { CONFIG } from './config.js';
+// Client-side-only auth. The terminal (`at homepagelogin`) mints a JWT with
+// the shared api-jwt-signing-secret, then opens the browser at
+//   https://homepage.romaine.life/#token=<jwt>
+// This module absorbs the fragment on load, stashes the JWT in localStorage,
+// scrubs the URL, and hands it out as a Bearer header on API calls. No
+// cookie, no /auth/* endpoints — fzt-frontend.romaine.life only verifies.
 
-/** Clear the auth cookie by requesting the API to expire it, then reload. */
-export function logout() {
-  // The cookie is HttpOnly so we can't clear it from JS.
-  // Navigate to an API endpoint that clears it and redirects back.
-  window.location.href = `${CONFIG.apiUrl}/auth/logout`;
-}
+const STORAGE_KEY = 'homepage_jwt';
 
-/**
- * Check if the user is authenticated by making a lightweight API call.
- * The HttpOnly cookie is sent automatically — JS never touches the token.
- */
-export async function checkAuth() {
-  try {
-    const res = await fetch(`${CONFIG.apiUrl}/api/settings`, {
-      credentials: 'include',
-    });
-    return res.ok;
-  } catch {
-    return false;
+// Absorb `#token=<jwt>` on module load (runs once per page load).
+(function absorbTokenFragment() {
+  const match = window.location.hash.match(/#token=([A-Za-z0-9_\-.]+)/);
+  if (match) {
+    localStorage.setItem(STORAGE_KEY, match[1]);
+    history.replaceState(null, '', window.location.pathname + window.location.search);
   }
+})();
+
+export function getToken() {
+  return localStorage.getItem(STORAGE_KEY);
 }
 
-/**
- * Fetch the logged-in user's identity from the JWT cookie.
- * Returns { name, email } or null if not authenticated.
- */
-export async function fetchWhoami() {
+export function authHeader() {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+function parseJwt(t) {
   try {
-    const res = await fetch(`${CONFIG.apiUrl}/auth/whoami`, {
-      credentials: 'include',
-    });
-    if (!res.ok) return null;
-    return res.json();
+    return JSON.parse(atob(t.split('.')[1]));
   } catch {
     return null;
   }
 }
 
-// ── API helpers ─────────────────────────────────────────────────
-
-export async function fetchSettings() {
-  const res = await fetch(`${CONFIG.apiUrl}/api/settings`, {
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  const data = await res.json();
-  return data.settings || {};
+export async function checkAuth() {
+  const t = getToken();
+  if (!t) return false;
+  const payload = parseJwt(t);
+  if (!payload) {
+    localStorage.removeItem(STORAGE_KEY);
+    return false;
+  }
+  if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+    localStorage.removeItem(STORAGE_KEY);
+    return false;
+  }
+  return true;
 }
 
-export async function putSettings(settings) {
-  const res = await fetch(`${CONFIG.apiUrl}/api/settings`, {
-    method: 'PUT',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ settings }),
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+export async function fetchWhoami() {
+  const t = getToken();
+  if (!t) return null;
+  const payload = parseJwt(t);
+  if (!payload) return null;
+  return {
+    sub: payload.sub,
+    name: payload.name || null,
+    email: payload.email || payload.sub,
+  };
+}
+
+export function logout() {
+  localStorage.removeItem(STORAGE_KEY);
+  window.location.reload();
 }

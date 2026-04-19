@@ -1,0 +1,15 @@
+.git
+.github
+tofu
+k8s
+packages
+extension
+node_modules
+frontend/node_modules
+frontend/fzt.wasm
+frontend/fzt-terminal.js
+frontend/fzt-terminal.css
+frontend/fzt-web.js
+*.md
+.gitignore
+.npmrc

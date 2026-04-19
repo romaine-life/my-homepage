@@ -1,8 +1,5 @@
-const _isBypass = window.location.hostname.includes("azurestaticapps.net");
-
+// fztApiBase points at the fzt-frontend service that hosts /fzt/tree/:id.
+// Override at generate-config.sh time for staging/other envs.
 export const CONFIG = {
-  apiUrl: _isBypass ? "https://<CONTAINER_APP_FQDN>/homepage" : "http://localhost:3001/homepage",
-  apiRoot: _isBypass ? "https://<CONTAINER_APP_FQDN>" : "http://localhost:3001",
-  isBypass: _isBypass,
-  microsoftClientId: "<MICROSOFT_CLIENT_ID>",
+  fztApiBase: "https://fzt-frontend.romaine.life",
 };

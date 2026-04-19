@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-homepage
+  namespace: my-homepage
+  labels:
+    app: my-homepage
+spec:
+  type: ClusterIP
+  selector:
+    app: my-homepage
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

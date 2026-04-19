@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { logout, checkAuth, fetchSettings, putSettings, fetchWhoami } from './auth.js';
+import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
 import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
@@ -10,7 +10,6 @@ const apiError = document.getElementById("api-error");
 
 const CACHE_KEY = "cached_bookmarks";
 const PLAYGROUND_KEY = "playground_bookmarks";
-const SETTINGS_CACHE_KEY = "cached_settings";
 
 // ── Edit mode state ─────────────────────────────────────────────
 let editMode = false;
@@ -134,18 +133,6 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   if (await checkAuth()) {
     userAuthenticated = true;
     playgroundMode = false;
-
-    // Load cached settings and apply background
-    let settings = loadCachedSettings();
-    if (!settings) {
-      try {
-        settings = await fetchSettings();
-        saveCachedSettings(settings);
-      } catch { settings = {}; }
-    }
-    if (settings.backgroundUrl) {
-      document.body.style.backgroundImage = `url(${settings.backgroundUrl})`;
-    }
 
     // Load from cache immediately — no blocking network call, works offline
     const cached = loadCachedBookmarks();
@@ -273,40 +260,17 @@ function clearPlaygroundBookmarks() {
   try { localStorage.removeItem(PLAYGROUND_KEY); } catch { /* non-critical */ }
 }
 
-// ── Settings localStorage helpers ────────────────────────────────
-
-function loadCachedSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveCachedSettings(settings) {
-  try {
-    localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settings));
-  } catch { /* non-critical */ }
-}
-
-function clearCachedSettings() {
-  try { localStorage.removeItem(SETTINGS_CACHE_KEY); } catch { /* non-critical */ }
-}
-
 // ── API ─────────────────────────────────────────────────────────
 
 async function fetchBookmarks() {
   try {
     const treeId = await bookmarksTreeId();
-    const url = `${CONFIG.apiRoot}/fzt/tree/${treeId}`;
-    let res = await fetch(url, { credentials: 'include' });
+    const url = `${CONFIG.fztApiBase}/fzt/tree/${treeId}`;
+    let res = await fetch(url, { headers: { ...authHeader() } });
 
     if (res.status === 503) {
       await ensureBackendReady();
-      res = await fetch(url, { credentials: 'include' });
+      res = await fetch(url, { headers: { ...authHeader() } });
     }
 
     if (res.status === 401) {
@@ -335,16 +299,16 @@ async function fetchBookmarks() {
 
 async function putBookmarks(bookmarks) {
   const treeId = await bookmarksTreeId();
-  const url = `${CONFIG.apiRoot}/fzt/tree/${treeId}`;
+  const url = `${CONFIG.fztApiBase}/fzt/tree/${treeId}`;
   const requestBody = {
     tree: bookmarks,
     baseVersion: lastFetchedVersion,
   };
+  const putHeaders = { "Content-Type": "application/json", ...authHeader() };
 
   let res = await fetch(url, {
     method: "PUT",
-    credentials: 'include',
-    headers: { "Content-Type": "application/json" },
+    headers: putHeaders,
     body: JSON.stringify(requestBody),
   });
 
@@ -352,8 +316,7 @@ async function putBookmarks(bookmarks) {
     await ensureBackendReady();
     res = await fetch(url, {
       method: "PUT",
-      credentials: 'include',
-      headers: { "Content-Type": "application/json" },
+      headers: putHeaders,
       body: JSON.stringify(requestBody),
     });
   }
