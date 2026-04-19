@@ -169,16 +169,8 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       }
     }).catch(() => { /* offline — cache is fine */ });
 
-    // Show logged-in user in fzt border
-    fetchWhoami().then(user => {
-      if (user?.name || user?.email) {
-        fzhReady.then(() => {
-          if (window.fzt?.setLabel) {
-            window.fzt.setLabel(user.name || user.email);
-          }
-        });
-      }
-    });
+    // Identity display removed — the :whoami palette leaf emits it as a
+    // one-shot status when the user explicitly asks for it.
   } else {
     // Playground mode — no auth, local-only bookmarks
     userAuthenticated = false;
