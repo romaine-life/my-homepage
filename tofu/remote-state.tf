@@ -6,8 +6,6 @@ locals {
     cosmos_db_account_id           = "/subscriptions/aee0cbd2-8074-4001-b610-0f8edb4eaa3c/resourceGroups/infra/providers/Microsoft.DocumentDB/databaseAccounts/infra-cosmos"
     azure_app_config_endpoint      = "https://infra-appconfig.azconfig.io"
     azure_app_config_resource_id   = "/subscriptions/aee0cbd2-8074-4001-b610-0f8edb4eaa3c/resourceGroups/infra/providers/Microsoft.AppConfiguration/configurationStores/infra-appconfig"
-    auth0_domain                   = "auth.romaine.life"
-    auth0_connection_apple_id      = "con_DM1he2xMWnIQiVgg"
     key_vault_name                 = "romaine-kv"
   }
 }
