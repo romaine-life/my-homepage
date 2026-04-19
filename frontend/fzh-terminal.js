@@ -50,6 +50,10 @@ export async function initFzhTerminal(containerEl) {
   ]);
 }
 
+export function setIdentity(identity) {
+  if (_term && _term.isReady()) _term.setIdentity(identity);
+}
+
 export function loadBookmarks(bookmarks) {
   if (!_term || !_term.isReady()) return;
   if (!bookmarks) return;

@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchSettings, putSettings, fetchWhoami } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -169,8 +169,13 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       }
     }).catch(() => { /* offline — cache is fine */ });
 
-    // Identity display removed — the :whoami palette leaf emits it as a
-    // one-shot status when the user explicitly asks for it.
+    // Wire the loaded identity into the fzt session so the :whoami palette
+    // leaf can emit it as a one-shot status on demand. Not rendered ambiently.
+    fetchWhoami().then(user => {
+      if (user?.name || user?.email) {
+        fzhReady.then(() => setFzhIdentity(user.name || user.email));
+      }
+    });
   } else {
     // Playground mode — no auth, local-only bookmarks
     userAuthenticated = false;
