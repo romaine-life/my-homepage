@@ -23,7 +23,17 @@ let playgroundMode = false;
 let pendingBookmarks = null; // fresh bookmarks from background fetch, awaiting reload
 let dragAllowed = false;
 let dragState = null;
+let callerSub = null; // cached JWT sub from whoami — used to build tree ids
 document.addEventListener("mouseup", () => { dragAllowed = false; });
+
+async function bookmarksTreeId() {
+  if (!callerSub) {
+    const who = await fetchWhoami();
+    if (!who || !who.sub) throw new Error("not authenticated");
+    callerSub = who.sub;
+  }
+  return `${callerSub}-bookmarks`;
+}
 
 const fzhTerminal = document.getElementById("fzh-terminal");
 
@@ -293,27 +303,16 @@ function clearCachedSettings() {
 
 async function fetchBookmarks() {
   try {
-    let res = await fetch(`${CONFIG.apiRoot}/fzt/tree/me/bookmarks`, {
-      credentials: 'include',
-    });
+    const treeId = await bookmarksTreeId();
+    const url = `${CONFIG.apiRoot}/fzt/tree/${treeId}`;
+    let res = await fetch(url, { credentials: 'include' });
 
     if (res.status === 503) {
       await ensureBackendReady();
-      res = await fetch(`${CONFIG.apiRoot}/fzt/tree/me/bookmarks`, {
-        credentials: 'include',
-      });
+      res = await fetch(url, { credentials: 'include' });
     }
 
     if (res.status === 401) {
-      return [];
-    }
-
-    // Fresh account — no tree yet. Empty bookmarks list is the right initial
-    // state (not an error).
-    if (res.status === 404) {
-      hideApiError();
-      lastFetchedVersion = 0;
-      originalBookmarks = [];
       return [];
     }
 
@@ -338,12 +337,14 @@ async function fetchBookmarks() {
 }
 
 async function putBookmarks(bookmarks) {
+  const treeId = await bookmarksTreeId();
+  const url = `${CONFIG.apiRoot}/fzt/tree/${treeId}`;
   const requestBody = {
     tree: bookmarks,
     baseVersion: lastFetchedVersion,
   };
 
-  let res = await fetch(`${CONFIG.apiRoot}/fzt/tree/me/bookmarks`, {
+  let res = await fetch(url, {
     method: "PUT",
     credentials: 'include',
     headers: { "Content-Type": "application/json" },
@@ -352,7 +353,7 @@ async function putBookmarks(bookmarks) {
 
   if (res.status === 503) {
     await ensureBackendReady();
-    res = await fetch(`${CONFIG.apiRoot}/fzt/tree/me/bookmarks`, {
+    res = await fetch(url, {
       method: "PUT",
       credentials: 'include',
       headers: { "Content-Type": "application/json" },

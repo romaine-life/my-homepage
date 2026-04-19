@@ -82,7 +82,11 @@ export function createHomepageRoutes({ requireAuth, container, jwtSecret, fronte
 
     try {
       const decoded = jwt.verify(match.slice('auth_token='.length), jwtSecret);
-      res.json({ name: decoded.name || null, email: decoded.email || decoded.sub });
+      res.json({
+        sub: decoded.sub,
+        name: decoded.name || null,
+        email: decoded.email || decoded.sub,
+      });
     } catch {
       res.status(401).json({ error: 'invalid token' });
     }

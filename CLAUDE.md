@@ -15,7 +15,7 @@ Terminal-minted JWTs — no browser-side auth UI. The `at` command (`homepagelog
 
 Published as `@nelsong6/my-homepage-routes` to GitHub Packages. Contains settings CRUD (`HomepageDB.userdata`) and the auth cookie flow (`/auth/code`, `/auth/callback`, `/auth/whoami`, `/auth/logout`). Receives `requireAuth`, `container` (userdata) via dependency injection from the shared API. Peer dep: `@azure/cosmos`.
 
-Bookmarks moved out on 2026-04-18 — they now live in the unified `/fzt/tree/:ns/:name` endpoint (`@nelsong6/fzt-frontend-routes`), alongside menus and shared refs.
+Bookmarks moved out on 2026-04-18 — they now live in the unified `/fzt/tree/:id` endpoint (`@nelsong6/fzt-frontend-routes`), alongside menus and shared refs.
 
 ## fzt Terminal Integration
 
@@ -27,7 +27,7 @@ Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree
 - **Unified tree+search**: fzt starts in tree view mode (`fzt.init`). The tree is the single navigation surface. Two modes: search mode (typing drives cursor to top match) and nav mode (arrow keys / Shift+HJKL). Enter, Right, and Space on a folder all push scope — unified behavior regardless of input mode.
 - **Scope as breadcrumb**: Enter, Right, Tab, or Space on a folder pushes scope. The folder name appears as greyed-out locked text in the prompt. Backspace/Escape on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
 - **Unified prompt rendering**: Within `drawUnified`, `navMode` affects ONLY the prompt icon (arrow vs magnifying glass). All other rendering — breadcrumb, content area, cursor visibility, top match highlighting — is mode-independent, driven by `treeCursor`, `query`, `scope`, and `searchActive` state.
-- **Clipboard commands** (legacy, pending removal): The homepage frontend registers "copy yaml" and "paste yaml" commands in fzt's `:` palette via `fzt.addCommands()`. Copy exports the bookmark tree to clipboard; paste reads YAML from clipboard and saves via API. Not preferred — use the API directly (`GET`/`PUT /fzt/tree/me/bookmarks`) for programmatic edits.
+- **Clipboard commands** (legacy, pending removal): The homepage frontend registers "copy yaml" and "paste yaml" commands in fzt's `:` palette via `fzt.addCommands()`. Copy exports the bookmark tree to clipboard; paste reads YAML from clipboard and saves via API. Not preferred — use the API directly (`GET`/`PUT /fzt/tree/<sub>-bookmarks`) for programmatic edits.
 - **Click support**: Row `<div>` click handlers call `fzt.clickRow(row)` — fzt maps the visual row to a tree item. Folders push scope, leaves return URLs for navigation.
 - **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.init(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
 - **Keyboard routing**: All keys forwarded to fzt by default. Forwarding stops when `editMode` is active or focus is in an input/textarea/select.
@@ -40,15 +40,15 @@ Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree
 
 ## Storage
 
-Bookmarks are served by the unified tree API at `/fzt/tree/:ns/:name` (route package `@nelsong6/fzt-frontend-routes`). The homepage frontend hits `/fzt/tree/me/bookmarks` — `me` is a server-side alias for the caller's JWT `sub`.
+Bookmarks are served by the unified tree API at `/fzt/tree/:id` (route package `@nelsong6/fzt-frontend-routes`). The frontend calls `/auth/whoami` on first load to learn its JWT `sub`, then fetches `/fzt/tree/<sub>-bookmarks` (e.g. `nelson-bookmarks`).
 
-Tree docs live in `HomepageDB.fzt-frontend-data` (partition key `/userId`, legacy name — it holds all tree entities now, not just bookmarks). Schema:
+Tree docs live in `HomepageDB.fzt-frontend-data` (partition key path `/userId`, legacy name — every tree owns its own partition keyed by its id). Schema:
 
 | `type` | `id` format | Partition (userId) | Notes |
 |---|---|---|---|
-| `tree` | `tree_<ns>_<name>_v<N>` | `<ns>` for personal, `shared:<name>` for shared | Unified shape for bookmarks, menus, shared refs — `namespace` + `name` fields discriminate |
+| `tree` | `tree_<treeId>_v<N>` | `<treeId>` | Flat tree ids. Personal trees by convention are `<sub>-<kind>` (e.g. `nelson-bookmarks`, `nelson-menu`); shared trees are free-form names (e.g. `google`). No ACL — any authenticated caller can read/write any tree; identity scoping is client-side. |
 
-Each save bumps `N`; GET returns the latest `N` per (ns, name). Pre-2026-04-18 state: bookmarks on Azure Blob, then briefly on Cosmos as `type='bookmarks'`/`type='bookmarks-shared'` docs (2026-04-18). Both shapes migrated into the unified `type='tree'` form; old docs preserved for rollback but unreferenced.
+Each save bumps `N`; GET returns the latest `N` per tree id. Pre-2026-04-18 state: bookmarks on Azure Blob, then briefly `type='bookmarks'` / `'bookmarks-shared'` docs, then `type='tree'` with `namespace`+`name` partitioned by `/userId` scheme. All migrated into the current flat-id shape; old docs preserved for rollback but unreferenced.
 
 Settings still live in `HomepageDB.userdata` as `type='settings'` docs (separate container). The `backgroundUrl` field in settings controls the page background image.
 
@@ -56,18 +56,18 @@ Settings still live in `HomepageDB.userdata` as `type='settings'` docs (separate
 
 Refs enable shared bookmarks across identities. A tree node can be `{ ref: "<ns>/<name>" }` — a pointer to another tree. Schema rule: if `ref` is present, no other non-metadata properties allowed. The ref's target owns its own `name`/`description` on its root.
 
-### Read flow (GET /fzt/tree/me/bookmarks)
+### Read flow (GET /fzt/tree/:id)
 
-1. API reads the latest `tree` doc for `(userId=caller, name='bookmarks')`
+1. API reads the latest `tree` doc for that id
 2. `resolveRefs()` walks the tree — each `{ ref }` node is replaced with the referenced tree's contents, tagged `_ref` and `_refVersion`
 3. Recursive: refs within ref contents are resolved (visited set prevents cycles, max depth 10)
 4. Frontend receives fully expanded tree; `_ref`/`_refVersion` enable round-trip preservation
 
-### Write flow (PUT /fzt/tree/me/bookmarks)
+### Write flow (PUT /fzt/tree/:id)
 
 1. Conflict check: `baseVersion` compared against latest version; 409 with `currentTree` + `currentVersion` if mismatch
-2. `stripRefs()` walks the body — nodes tagged `_ref` collapse back to `{ ref: "<ns>/<name>"}` pointers, losing any in-subtree edits
-3. One-tree-per-PUT: edits made inside a resolved `_ref` subtree do NOT propagate to the referenced tree. The UI must issue a separate `PUT /fzt/tree/<ref_ns>/<ref_name>` using the captured `_refVersion` as `baseVersion` (tracked in [fzt-frontend#4](https://github.com/nelsong6/fzt-frontend/issues/4))
+2. `stripRefs()` walks the body — nodes tagged `_ref` collapse back to `{ ref: "<treeId>" }` pointers, losing any in-subtree edits
+3. One-tree-per-PUT: edits made inside a resolved `_ref` subtree do NOT propagate to the referenced tree. The UI must issue a separate `PUT /fzt/tree/<refId>` using the captured `_refVersion` as `baseVersion` (tracked in [fzt-frontend#4](https://github.com/nelsong6/fzt-frontend/issues/4))
 
 ### Frontend ref handling
 
