@@ -65,6 +65,19 @@ export function hidePalette() {
   _term.hidePalette();
 }
 
+// Write to the fzt title status bar. style maps to core.State.TitleStyle
+// (0=default cyan, 1=green success, 2=red error, 3=neutral slate).
+// Requires an active session — call after loadBookmarks has fired init.
+export function setStatus(msg, style = 0) {
+  if (!_term || !_term.isReady()) return;
+  _term.setStatus(msg, style);
+}
+
+export function clearStatus() {
+  if (!_term || !_term.isReady()) return;
+  _term.clearStatus();
+}
+
 export function setIdentity(identity) {
   if (_term && _term.isReady()) _term.setIdentity(identity);
 }

@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, hidePalette as hideFzhPalette } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, hidePalette as hideFzhPalette, setStatus as setFzhStatus, clearStatus as clearFzhStatus } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -186,16 +186,12 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 })();
 
 function showApiError(msg) {
-  if (apiError._timer) { clearTimeout(apiError._timer); apiError._timer = null; }
   apiError.textContent = msg;
-  apiError.classList.remove("info");
   apiError.classList.remove("hidden");
 }
 
 function hideApiError() {
-  if (apiError._timer) { clearTimeout(apiError._timer); apiError._timer = null; }
   apiError.classList.add("hidden");
-  apiError.classList.remove("info");
 }
 
 // ── Sync indicator ──────────────────────────────────────────────
@@ -215,40 +211,27 @@ function showSyncIndicator() {
 // Manual re-fetch (from the `:sync` palette command). Mirrors the page-
 // load background-fetch logic but compares against currentBookmarks
 // rather than the initial `cached`, so it works after pendingBookmarks
-// has been applied at least once in the current session. Always shows
-// a transient status toast so the user knows the command ran.
+// has been applied at least once in the current session. Status flows
+// through fzt's title bar (the canonical fzt status surface) via
+// setFzhStatus — style 0 default, 1 green success, 2 red error, 3
+// neutral slate.
 async function triggerManualSync() {
-  showSyncStatus("Syncing…", 10000); // long timeout — replaced by the result below
+  setFzhStatus("Syncing…", 0);
   try {
     const fresh = await fetchBookmarks();
-    if (!fresh) { showSyncStatus("No data returned"); return; }
+    if (!fresh) { setFzhStatus("No data returned", 2); return; }
     saveCachedBookmarks(fresh);
     const cur = currentBookmarks || [];
     if (JSON.stringify(fresh) === JSON.stringify(cur)) {
-      showSyncStatus("Up to date");
+      setFzhStatus("Up to date", 1);
       return;
     }
     pendingBookmarks = fresh;
-    showSyncStatus("New bookmarks found — click dot to preview", 2500);
+    setFzhStatus("New bookmarks found — click dot", 1);
     showSyncIndicator();
   } catch {
-    showSyncStatus("Offline — cache kept");
+    setFzhStatus("Offline — cache kept", 3);
   }
-}
-
-// Transient informational banner via the repo's standard #api-error
-// surface. Adds .info for neutral styling and auto-hides after `ms`.
-// Used by :sync to confirm the command ran even when there's no diff
-// to surface via the dot.
-function showSyncStatus(msg, ms = 1500) {
-  apiError.textContent = msg;
-  apiError.classList.add("info");
-  apiError.classList.remove("hidden");
-  if (apiError._timer) clearTimeout(apiError._timer);
-  apiError._timer = setTimeout(() => {
-    apiError.classList.add("hidden");
-    apiError.classList.remove("info");
-  }, ms);
 }
 
 function applySyncedBookmarks() {

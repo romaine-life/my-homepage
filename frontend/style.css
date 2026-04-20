@@ -477,14 +477,6 @@ body {
   display: none;
 }
 
-/* #api-error is the repo's standard inline status banner. It defaults to
-   the red error styling above. Non-error messages (e.g. :sync feedback)
-   flip .info to swap to neutral slate + cyan accent. */
-#api-error.info {
-  background: #1e1e2e;
-  color: #89b4fa;
-}
-
 /* Sync diff modal — click the sync indicator to preview pending changes
    as a git-style unified diff before applying. */
 #sync-diff-overlay {
