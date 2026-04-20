@@ -52,7 +52,7 @@ export async function initFzhTerminal(containerEl) {
 export function registerCommands() {
   if (!_term || !_term.isReady()) return;
   _term.addCommands([
-    { name: "sync", description: "Check cloud for new bookmarks", action: "sync" },
+    { name: "sync", description: "Check cloud for new bookmarks", action: "refresh" },
     { name: "edit", description: "Edit bookmark tree", action: "edit" },
     { name: "logout", description: "Log out", action: "logout" },
     { name: "copy yaml", description: "Copy bookmark tree to clipboard", action: "copy-yaml" },

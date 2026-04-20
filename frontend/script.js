@@ -91,7 +91,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       if (url === "homectl:edit") { enterEditMode(); return; }
       if (url === "homectl:logout") { logout(); return; }
       window.location.href = ensureAbsoluteUrl(url);
-    } else if (action === "sync") {
+    } else if (action === "refresh") {
       triggerManualSync();
     } else if (action === "edit") {
       enterEditMode();
