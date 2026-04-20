@@ -216,7 +216,6 @@ function showSyncIndicator() {
 // setFzhStatus — style 0 default, 1 green success, 2 red error, 3
 // neutral slate.
 async function triggerManualSync() {
-  setFzhStatus("Syncing…", 0);
   try {
     const fresh = await fetchBookmarks();
     if (!fresh) { setFzhStatus("No data returned", 2); return; }
