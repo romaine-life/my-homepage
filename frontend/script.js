@@ -91,6 +91,8 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       if (url === "homectl:edit") { enterEditMode(); return; }
       if (url === "homectl:logout") { logout(); return; }
       window.location.href = ensureAbsoluteUrl(url);
+    } else if (action === "sync") {
+      triggerManualSync();
     } else if (action === "edit") {
       enterEditMode();
     } else if (action === "logout") {
@@ -204,6 +206,24 @@ function showSyncIndicator() {
   }
   dot.title = summarizeTreeDiff(currentBookmarks || [], pendingBookmarks || []);
   dot.classList.remove("hidden");
+}
+
+// Manual re-fetch (from the `:sync` palette command). Mirrors the page-
+// load background-fetch logic but compares against currentBookmarks
+// rather than the initial `cached`, so it works after pendingBookmarks
+// has been applied at least once in the current session.
+async function triggerManualSync() {
+  try {
+    const fresh = await fetchBookmarks();
+    if (!fresh) return;
+    saveCachedBookmarks(fresh);
+    const cur = currentBookmarks || [];
+    if (JSON.stringify(fresh) === JSON.stringify(cur)) return; // up to date
+    pendingBookmarks = fresh;
+    showSyncIndicator();
+  } catch {
+    // offline — cache is fine; no feedback needed beyond the silence
+  }
 }
 
 function applySyncedBookmarks() {
