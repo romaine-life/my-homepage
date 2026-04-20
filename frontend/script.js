@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, hidePalette as hideFzhPalette } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -134,6 +134,11 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     userAuthenticated = true;
     playgroundMode = false;
 
+    // Register the : palette commands only after auth confirms — otherwise
+    // edit/logout/copy/paste would appear for playground visitors with no
+    // session to operate on.
+    fzhReady.then(() => registerFzhCommands());
+
     // Load from cache immediately — no blocking network call, works offline
     const cached = loadCachedBookmarks();
     if (cached) {
@@ -167,6 +172,9 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     // Playground mode — no auth, local-only bookmarks
     userAuthenticated = false;
     playgroundMode = true;
+    // Suppress the `:` palette root row. The commands it would hold (edit,
+    // logout, etc.) operate on a user session that doesn't exist here.
+    fzhReady.then(() => hideFzhPalette());
     const saved = loadPlaygroundBookmarks();
     currentBookmarks = (saved && saved.length > 0) ? saved : deepClone(SAMPLE_BOOKMARKS);
     savePlaygroundBookmarks(currentBookmarks);

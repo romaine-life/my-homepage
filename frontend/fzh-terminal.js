@@ -40,14 +40,27 @@ export async function initFzhTerminal(containerEl) {
 
   await _term.initWasm();
 
-  // Register frontend identity and commands for the : palette
+  // Register frontend identity and commands for the : palette.
+  // All registered commands assume an authenticated session (edit/logout
+  // are useless without one; copy/paste are scoped to the current user's
+  // tree). script.js gates addCommands on auth; playground visitors call
+  // hidePalette() instead so no `:` row shows at root.
   _term.setFrontend({ name: "homepage", version: "v1.0" });
+}
+
+export function registerCommands() {
+  if (!_term || !_term.isReady()) return;
   _term.addCommands([
     { name: "edit", description: "Edit bookmark tree", action: "edit" },
     { name: "logout", description: "Log out", action: "logout" },
     { name: "copy yaml", description: "Copy bookmark tree to clipboard", action: "copy-yaml" },
     { name: "paste yaml", description: "Save clipboard YAML as bookmarks", action: "paste-yaml" },
   ]);
+}
+
+export function hidePalette() {
+  if (!_term || !_term.isReady()) return;
+  _term.hidePalette();
 }
 
 export function setIdentity(identity) {

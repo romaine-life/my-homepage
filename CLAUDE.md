@@ -24,7 +24,7 @@ Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go 
 Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree.go`; WASM bridge API in `fzt-terminal/cmd/wasm/main.go`; ancestor matching design (why bookmark names in different folders don't collide) in `fzt/CLAUDE.md` "Ancestor matching eliminates name collisions".
 
 - **Layout**: Single-panel — fzt terminal fills the main content area. No side rail. The HTML tree only appears during edit mode (full-width). The old two-panel side-rail layout was removed.
-- **Unified tree+search**: fzt starts in tree view mode (`fzt.init`). The tree is the single navigation surface. Two modes: search mode (typing drives cursor to top match) and nav mode (arrow keys / Shift+HJKL). Enter, Right, and Space on a folder all push scope — unified behavior regardless of input mode.
+- **Unified tree+search**: fzt starts in search mode (typing fills query, fzt.init kicks it off). Two explicit modes — search (magnifying-glass prompt, typing fills query) and normal (arrow prompt, cursor on tree, lowercase hjkl nav). Arrow keys or `` ` `` (backtick) enter normal mode; `/` returns to search preserving query, Backspace returns chopping the last query char. Enter, Right, and Space on a folder push scope; Shift+Enter universally commits the cursor's item. See `fzt-terminal/CLAUDE.md` "Keyboard model" for the canonical rule.
 - **Scope as breadcrumb**: Enter, Right, Tab, or Space on a folder pushes scope. The folder name appears as greyed-out locked text in the prompt. Backspace/Escape on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
 - **Unified prompt rendering**: Within `drawUnified`, `navMode` affects ONLY the prompt icon (arrow vs magnifying glass). All other rendering — breadcrumb, content area, cursor visibility, top match highlighting — is mode-independent, driven by `treeCursor`, `query`, `scope`, and `searchActive` state.
 - **Clipboard commands** (legacy, pending removal): The homepage frontend registers "copy yaml" and "paste yaml" commands in fzt's `:` palette via `fzt.addCommands()`. Copy exports the bookmark tree to clipboard; paste reads YAML from clipboard and saves via API. Not preferred — use the API directly (`GET`/`PUT /fzt/tree/<sub>-bookmarks`) for programmatic edits.
@@ -133,9 +133,9 @@ Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/pl
 
 ## fzt Deploy Pipeline
 
-The deploy workflow (`full-stack-deploy.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser GitHub release at deploy time — none committed to git. Triggered by `repository_dispatch` (`fzt-updated`) from fzt-browser's release pipeline, in addition to `frontend/**` pushes and manual dispatch. This means pushing a new fzt-browser version automatically redeploys both the showcase and this app.
+The deploy workflow (`build-and-deploy.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser GitHub release at deploy time — none committed to git. Triggered by pushes under `frontend/**`, `backend/**`, the Dockerfile, or `k8s/**`, or manually via `workflow_dispatch`. A new fzt-browser release does not auto-redeploy here — retrigger manually (`gh workflow run build-and-deploy.yml -R nelsong6/my-homepage`) when you want the latest fzt assets.
 
-After deploy, the workflow writes `version.json` (containing the fzt-browser release version used), verifies it's live on CDN, then POSTs to `api.romaine.life/ci/deployed` so the CI dashboard can show which version is running in production.
+The build writes `frontend/version.json` (containing the fzt-browser release version used) so the CI dashboard can see which version is live.
 
 ## Change Log
 

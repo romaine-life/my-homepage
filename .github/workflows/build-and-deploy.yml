@@ -10,8 +10,6 @@ on:
       - .dockerignore
       - k8s/**
       - .github/workflows/build-and-deploy.yml
-  repository_dispatch:
-    types: [fzt-updated]
   workflow_dispatch:
 
 permissions:
