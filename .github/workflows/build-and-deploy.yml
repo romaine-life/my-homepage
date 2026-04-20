@@ -59,8 +59,29 @@ jobs:
             "$FZT_VERSION" "${GITHUB_SHA::7}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             > frontend/version.json
 
+      - name: Compute next homepage version
+        id: homepage-version
+        # Auto-bump semver patch from the latest GitHub release tag. Same
+        # pattern as fzt/fzt-browser's release workflow. Written into
+        # config.js below and tagged on the repo after the push succeeds.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest=$(gh release list --limit 1 --json tagName -q '.[0].tagName // empty')
+          if [ -z "$latest" ]; then
+            next="v1.0.0"
+          else
+            patch=$(echo "$latest" | sed 's/v[0-9]*\.[0-9]*\.//')
+            major_minor=$(echo "$latest" | sed 's/\.[0-9]*$//')
+            next="${major_minor}.$((patch + 1))"
+          fi
+          echo "version=$next" >> $GITHUB_OUTPUT
+          echo "Next homepage version: $next"
+
       - name: Generate frontend/config.js
         # Uses the default (fzt-frontend.romaine.life) unless FZT_API_BASE is set.
+        env:
+          HOMEPAGE_VERSION: ${{ steps.homepage-version.outputs.version }}
         run: |
           chmod +x ./frontend/generate-config.sh
           ./frontend/generate-config.sh
@@ -96,3 +117,15 @@ jobs:
           fi
           git commit -m "chore: bump my-homepage image to ${{ env.TAG }} [skip ci]"
           git push
+
+      - name: Create release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.homepage-version.outputs.version }}
+        # Tagging at the pushed sha is what makes the NEXT run's version
+        # bump. Shipping with a matching GitHub release gives :version a
+        # clickable reference too.
+        run: |
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes "Image: romainecr.azurecr.io/my-homepage:${{ env.TAG }}"

@@ -3,6 +3,7 @@
 // Handles bookmark serialization and edit mode integration.
 
 import { createFztWeb } from './fzt-web.js';
+import { CONFIG } from './config.js';
 
 let _term = null;
 let _onAction = null;
@@ -46,7 +47,7 @@ export async function initFzhTerminal(containerEl) {
   // are useless without one; copy/paste are scoped to the current user's
   // tree). script.js gates addCommands on auth; playground visitors call
   // hidePalette() instead so no `:` row shows at root.
-  _term.setFrontend({ name: "homepage", version: "v1.0" });
+  _term.setFrontend({ name: "homepage", version: CONFIG.homepageVersion || "dev" });
 }
 
 export function registerCommands() {
