@@ -30,26 +30,26 @@ spec:
               containerPort: 3000
           resources:
             requests:
-              cpu: 10m
-              memory: 32Mi
+              cpu: 20m
+              memory: 96Mi
             limits:
               cpu: 200m
-              memory: 128Mi
+              memory: 256Mi
           startupProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             periodSeconds: 5
             failureThreshold: 10
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             periodSeconds: 30
             failureThreshold: 3

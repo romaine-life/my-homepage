@@ -6,6 +6,7 @@ packages
 extension
 node_modules
 frontend/node_modules
+backend/node_modules
 frontend/fzt.wasm
 frontend/fzt-terminal.js
 frontend/fzt-terminal.css

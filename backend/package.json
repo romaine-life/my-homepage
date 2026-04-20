@@ -1,0 +1,20 @@
+{
+  "name": "@nelsong6/my-homepage-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Per-app backend for homepage.romaine.life — serves the static frontend, no server-side logic.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "morgan": "^1.10.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
