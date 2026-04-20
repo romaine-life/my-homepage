@@ -120,6 +120,10 @@
 		}
 
 		// Apply an atmosphere-authoritative initial state (from /snapshot).
+		// The payload is a full "game save" — beyond config + timers, the
+		// server may include its gridW/gridH plus the active drops and
+		// splashes so this client drops straight into mid-simulation
+		// instead of starting with an empty air column.
 		restoreSnapshot(snap) {
 			this.setConfig(snap.config || {});
 			this.tick = snap.tick || 0;
@@ -129,6 +133,36 @@
 			this.gustTicks = snap.gustLeft || 0;
 			this.gustWind = snap.gustWind || 0;
 			if (typeof snap.seed === 'number') this.rng = makeRNG(snap.seed);
+			// Adopt the server's grid dims so drops transfer 1:1. The
+			// canvas render() scales whatever resolution we have to fit,
+			// so shifting from the local default (e.g. 200×100) to the
+			// server's (e.g. 160×80) is imperceptible.
+			if (snap.gridW > 0 && snap.gridH > 0 &&
+				(snap.gridW !== this.w || snap.gridH !== this.h)) {
+				this.w = snap.gridW;
+				this.h = snap.gridH;
+				this.grid = new Uint8ClampedArray(this.w * this.h * 3);
+			}
+			if (Array.isArray(snap.drops)) {
+				this.drops = snap.drops.map(d => ({
+					row: d.row,
+					col: d.col,
+					color: d.color,
+					vRow: d.vRow,
+					vCol: d.vCol,
+					streakLen: d.streakLen,
+				}));
+			}
+			if (Array.isArray(snap.splashes)) {
+				this.splashes = snap.splashes.map(s => ({
+					row: s.row,
+					col: s.col,
+					age: s.age,
+					maxAge: s.maxAge,
+					maxRadius: s.maxRadius,
+					color: s.color,
+				}));
+			}
 		}
 
 		// Trigger a discrete event — same semantics as server's TriggerEvent.
