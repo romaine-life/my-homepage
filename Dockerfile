@@ -15,10 +15,11 @@ server {
     location / {
         try_files $uri $uri/ /index.html;
     }
-    # Ensure WASM is served with the right mime so streaming compile works.
-    types {
-        application/wasm wasm;
-    }
+    # Inherit the default mime.types map from nginx's http{} context —
+    # do NOT declare a server-level types{} block here. An inner types{}
+    # completely overrides the outer map (nginx quirk), leaving every
+    # file served as application/octet-stream. application/wasm is
+    # already in the stock mime.types on nginx ≥ 1.21.
 }
 EOF
 
