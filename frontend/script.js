@@ -186,12 +186,16 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 })();
 
 function showApiError(msg) {
+  if (apiError._timer) { clearTimeout(apiError._timer); apiError._timer = null; }
   apiError.textContent = msg;
+  apiError.classList.remove("info");
   apiError.classList.remove("hidden");
 }
 
 function hideApiError() {
+  if (apiError._timer) { clearTimeout(apiError._timer); apiError._timer = null; }
   apiError.classList.add("hidden");
+  apiError.classList.remove("info");
 }
 
 // ── Sync indicator ──────────────────────────────────────────────
@@ -232,19 +236,19 @@ async function triggerManualSync() {
   }
 }
 
-// Small transient toast near the sync indicator. Used by :sync to confirm
-// the command ran even when there's no diff to surface via the dot.
+// Transient informational banner via the repo's standard #api-error
+// surface. Adds .info for neutral styling and auto-hides after `ms`.
+// Used by :sync to confirm the command ran even when there's no diff
+// to surface via the dot.
 function showSyncStatus(msg, ms = 1500) {
-  let el = document.getElementById("sync-status");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "sync-status";
-    document.body.appendChild(el);
-  }
-  el.textContent = msg;
-  el.classList.remove("hidden");
-  if (el._timer) clearTimeout(el._timer);
-  el._timer = setTimeout(() => el.classList.add("hidden"), ms);
+  apiError.textContent = msg;
+  apiError.classList.add("info");
+  apiError.classList.remove("hidden");
+  if (apiError._timer) clearTimeout(apiError._timer);
+  apiError._timer = setTimeout(() => {
+    apiError.classList.add("hidden");
+    apiError.classList.remove("info");
+  }, ms);
 }
 
 function applySyncedBookmarks() {
