@@ -455,6 +455,84 @@ body {
   display: none;
 }
 
+/* Sync diff modal — click the sync indicator to preview pending changes
+   as a git-style unified diff before applying. */
+#sync-diff-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#sync-diff-modal {
+  background: #1e1e2e;
+  border: 1px solid #a9a9a9;
+  border-radius: 4px;
+  padding: 0;
+  min-width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  font-family: "Perfect DOS VGA 437", "Cascadia Code", "Fira Code", "Consolas", monospace;
+  color: #cdd6f4;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+}
+
+.sync-diff-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid #a9a9a9;
+  color: #8be9fd;
+  font-weight: bold;
+}
+
+.sync-diff-body {
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  flex: 1;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+  white-space: pre;
+}
+
+.sync-diff-line {
+  display: block;
+}
+
+.sync-diff-add { color: #a6e3a1; background: rgba(166, 227, 161, 0.08); }
+.sync-diff-del { color: #f38ba8; background: rgba(243, 139, 168, 0.08); }
+.sync-diff-ctx { color: #bac2de; }
+
+.sync-diff-footer {
+  padding: 8px 12px;
+  border-top: 1px solid #a9a9a9;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.sync-diff-btn {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 4px 12px;
+  background: #313244;
+  color: #cdd6f4;
+  border: 1px solid #a9a9a9;
+  cursor: pointer;
+}
+
+.sync-diff-btn:hover {
+  background: #45475a;
+}
+
+.sync-diff-apply { color: #a6e3a1; border-color: #a6e3a1; }
+.sync-diff-cancel { color: #f9e2af; }
+
 /* ── Mobile responsive ───────────────────────── */
 
 @media (max-width: 600px) {

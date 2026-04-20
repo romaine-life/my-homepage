@@ -199,10 +199,10 @@ function showSyncIndicator() {
   if (!dot) {
     dot = document.createElement("div");
     dot.id = "sync-indicator";
-    dot.title = "New bookmarks available — click to reload";
-    dot.addEventListener("click", applySyncedBookmarks);
+    dot.addEventListener("click", openSyncDiffModal);
     document.body.appendChild(dot);
   }
+  dot.title = summarizeTreeDiff(currentBookmarks || [], pendingBookmarks || []);
   dot.classList.remove("hidden");
 }
 
@@ -218,6 +218,106 @@ function applySyncedBookmarks() {
   } else if (isTerminalReady()) {
     loadFzhBookmarks(currentBookmarks);
   }
+}
+
+// ── Sync diff modal ─────────────────────────────────────────────
+// When a background fetch spots fresher bookmarks than the local cache,
+// the dot appears and — on click — shows a git-diff-style view of what
+// would change. Apply swaps the tree in; Cancel keeps the current view.
+// Computing a unified diff on the YAML serialization is cheap for our
+// tree sizes (tens to low hundreds of lines).
+
+function openSyncDiffModal() {
+  if (!pendingBookmarks) return;
+  const oldYaml = bookmarksToYaml(currentBookmarks || []);
+  const newYaml = bookmarksToYaml(pendingBookmarks);
+  const diffLines = computeUnifiedDiff(oldYaml.replace(/\n$/, "").split("\n"), newYaml.replace(/\n$/, "").split("\n"));
+
+  const overlay = document.createElement("div");
+  overlay.id = "sync-diff-overlay";
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeSyncDiffModal(); });
+
+  const modal = document.createElement("div");
+  modal.id = "sync-diff-modal";
+
+  const header = document.createElement("div");
+  header.className = "sync-diff-header";
+  header.textContent = "Pending bookmark changes";
+  modal.appendChild(header);
+
+  const body = document.createElement("pre");
+  body.className = "sync-diff-body";
+  for (const line of diffLines) {
+    const span = document.createElement("span");
+    span.className = "sync-diff-line sync-diff-" + line.kind;
+    span.textContent = line.prefix + line.text + "\n";
+    body.appendChild(span);
+  }
+  modal.appendChild(body);
+
+  const footer = document.createElement("div");
+  footer.className = "sync-diff-footer";
+
+  const applyBtn = document.createElement("button");
+  applyBtn.className = "sync-diff-btn sync-diff-apply";
+  applyBtn.textContent = "Apply";
+  applyBtn.addEventListener("click", () => { closeSyncDiffModal(); applySyncedBookmarks(); });
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "sync-diff-btn sync-diff-cancel";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", closeSyncDiffModal);
+
+  footer.appendChild(applyBtn);
+  footer.appendChild(cancelBtn);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const onKey = (e) => {
+    if (e.key === "Escape") { closeSyncDiffModal(); document.removeEventListener("keydown", onKey); }
+  };
+  document.addEventListener("keydown", onKey);
+}
+
+function closeSyncDiffModal() {
+  const overlay = document.getElementById("sync-diff-overlay");
+  if (overlay) overlay.remove();
+}
+
+// Classic O(n*m) LCS diff. Tree sizes are small — no need for Myers.
+function computeUnifiedDiff(oldLines, newLines) {
+  const m = oldLines.length, n = newLines.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      if (oldLines[i] === newLines[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+      else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out = [];
+  let i = 0, j = 0;
+  while (i < m && j < n) {
+    if (oldLines[i] === newLines[j]) { out.push({ kind: "ctx", prefix: "  ", text: oldLines[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ kind: "del", prefix: "- ", text: oldLines[i] }); i++; }
+    else { out.push({ kind: "add", prefix: "+ ", text: newLines[j] }); j++; }
+  }
+  while (i < m) { out.push({ kind: "del", prefix: "- ", text: oldLines[i] }); i++; }
+  while (j < n) { out.push({ kind: "add", prefix: "+ ", text: newLines[j] }); j++; }
+  return out;
+}
+
+function summarizeTreeDiff(oldTree, newTree) {
+  const oldYaml = bookmarksToYaml(oldTree || []);
+  const newYaml = bookmarksToYaml(newTree || []);
+  const diff = computeUnifiedDiff(oldYaml.replace(/\n$/, "").split("\n"), newYaml.replace(/\n$/, "").split("\n"));
+  let added = 0, removed = 0;
+  for (const l of diff) {
+    if (l.kind === "add") added++;
+    else if (l.kind === "del") removed++;
+  }
+  return `Pending bookmark changes — ${added} line${added === 1 ? "" : "s"} added, ${removed} removed. Click to preview.`;
 }
 
 // ── localStorage helpers ────────────────────────────────────────
