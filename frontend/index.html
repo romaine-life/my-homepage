@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <canvas id="ambience-canvas" data-ambience></canvas>
   <div id="app">
     <div id="toolbar">
       <button id="save-btn" class="hidden">Save</button>
@@ -23,6 +24,8 @@
   <div id="local-badge" class="hidden">LOCAL</div>
 
   <script src="wasm_exec.js"></script>
+  <script src="ambience-sim.js"></script>
+  <script src="ambience-client.js"></script>
   <script type="module" src="script.js"></script>
 
   <script>

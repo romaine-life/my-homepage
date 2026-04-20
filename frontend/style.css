@@ -26,6 +26,13 @@
   --fzt-font: "Perfect DOS VGA 437", "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", "Symbols Nerd Font Mono", monospace;
 }
 
+/* When the ambience rain layer is present, let drops show through the
+   terminal window by making fzt's background transparent. The CRT
+   scanline overlay stays on top; text glyphs rasterize opaquely. */
+body.ambience-on {
+  --fzt-bg: transparent;
+}
+
 body {
   background: #050505;
   background-size: cover;
@@ -44,11 +51,26 @@ body {
   font-smooth: never;
 }
 
+/* Ambience rain canvas — fixed behind all content. Pointer-events none
+   so it never captures clicks. z-index 0 puts it above the body bg but
+   below #app (which gets z-index 1 below). */
+#ambience-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}
+
 #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
   padding: 12px 16px;
+  /* Sit above the ambience canvas */
+  position: relative;
+  z-index: 1;
 }
 
 #toolbar {
