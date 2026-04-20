@@ -11,12 +11,6 @@ Terminal-minted JWTs — no browser-side auth UI. The PowerShell `login` functio
 - **No browser auth fallback** — if the token is missing or expired, the app shows playground mode with sample bookmarks.
 - **Local dev port 3001** — the frontend dev server runs on port 3001 (`npx serve`). The shared API runs on port 3000.
 
-## Routes Package (`packages/routes/`)
-
-Published as `@nelsong6/my-homepage-routes` to GitHub Packages. Contains settings CRUD (`HomepageDB.userdata`) and the auth cookie flow (`/auth/code`, `/auth/callback`, `/auth/whoami`, `/auth/logout`). Receives `requireAuth`, `container` (userdata) via dependency injection from the shared API. Peer dep: `@azure/cosmos`.
-
-Bookmarks moved out on 2026-04-18 — they now live in the unified `/fzt/tree/:id` endpoint (`@nelsong6/fzt-frontend-routes`), alongside menus and shared refs.
-
 ## fzt Terminal Integration
 
 Primary navigation is a fzt WASM terminal rendered in a `<pre>` element. The Go TUI runs in-browser via WebAssembly — all scoring, filtering, and rendering happens in Go; the JS side is stateless (forwards keyboard events, parses ANSI output, renders styled spans, handles row clicks).
@@ -135,10 +129,6 @@ Three identities with clean sub values (migrated from legacy OAuth IDs):
 - `nelson-r1` — R1 (`gromaine@r1rcm.com`), profile 3
 
 Blob filenames match: `nelson.yaml`, `nelson-ea.yaml`, `nelson-r1.yaml`. Legacy Google OAuth accounts remain in Cosmos DB but are unused.
-
-## Publish Pipeline
-
-Triggers on push to `packages/routes/**` (path-based, same pattern as kill-me/plant-agent). Auto-bumps patch version from registry, publishes, then dispatches `dependency-updated` to the API repo. After dispatch, the API lockfile must be updated locally before the API build will pick up the new version — `npm ci` uses the lockfile.
 
 ## fzt Deploy Pipeline
 
