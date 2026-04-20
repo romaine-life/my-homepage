@@ -88,8 +88,6 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   // Wire up fzt action callback
   onTerminalAction(async (action, url) => {
     if (action.startsWith("select:") && url) {
-      if (url === "homectl:edit") { enterEditMode(); return; }
-      if (url === "homectl:logout") { logout(); return; }
       window.location.href = ensureAbsoluteUrl(url);
     } else if (action === "refresh") {
       triggerManualSync();
