@@ -211,19 +211,40 @@ function showSyncIndicator() {
 // Manual re-fetch (from the `:sync` palette command). Mirrors the page-
 // load background-fetch logic but compares against currentBookmarks
 // rather than the initial `cached`, so it works after pendingBookmarks
-// has been applied at least once in the current session.
+// has been applied at least once in the current session. Always shows
+// a transient status toast so the user knows the command ran.
 async function triggerManualSync() {
+  showSyncStatus("Syncing…", 10000); // long timeout — replaced by the result below
   try {
     const fresh = await fetchBookmarks();
-    if (!fresh) return;
+    if (!fresh) { showSyncStatus("No data returned"); return; }
     saveCachedBookmarks(fresh);
     const cur = currentBookmarks || [];
-    if (JSON.stringify(fresh) === JSON.stringify(cur)) return; // up to date
+    if (JSON.stringify(fresh) === JSON.stringify(cur)) {
+      showSyncStatus("Up to date");
+      return;
+    }
     pendingBookmarks = fresh;
+    showSyncStatus("New bookmarks found — click dot to preview", 2500);
     showSyncIndicator();
   } catch {
-    // offline — cache is fine; no feedback needed beyond the silence
+    showSyncStatus("Offline — cache kept");
   }
+}
+
+// Small transient toast near the sync indicator. Used by :sync to confirm
+// the command ran even when there's no diff to surface via the dot.
+function showSyncStatus(msg, ms = 1500) {
+  let el = document.getElementById("sync-status");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "sync-status";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  if (el._timer) clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.add("hidden"), ms);
 }
 
 function applySyncedBookmarks() {

@@ -477,6 +477,30 @@ body {
   display: none;
 }
 
+/* Transient status toast shown by the :sync palette command. Lives to
+   the left of the green dot so both can be visible at once. Auto-fades
+   after ~1.5s via a JS timer flipping .hidden. */
+#sync-status {
+  position: fixed;
+  bottom: 6px;
+  right: 26px;
+  padding: 2px 8px;
+  background: #1e1e2e;
+  border: 1px solid #a9a9a9;
+  color: #bac2de;
+  font-family: "Perfect DOS VGA 437", "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.2;
+  opacity: 0.95;
+  transition: opacity 0.3s;
+  z-index: 99;
+  pointer-events: none;
+}
+
+#sync-status.hidden {
+  opacity: 0;
+}
+
 /* Sync diff modal — click the sync indicator to preview pending changes
    as a git-style unified diff before applying. */
 #sync-diff-overlay {
