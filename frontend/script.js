@@ -1088,6 +1088,7 @@ function cleanBookmarks(items) {
       // Ref pointer (unresolved) — pass through as-is
       if (item.ref && !item._ref) return { ref: item.ref };
       const clean = { name: item.name.trim().replace(/ /g, "-") };
+      if (item.description && item.description.trim()) clean.description = item.description.trim();
       if (item.url && item.url.trim()) clean.url = item.url.trim();
       if (Array.isArray(item.children) && item.children.length > 0) {
         clean.children = cleanBookmarks(item.children);
@@ -1120,6 +1121,7 @@ function bookmarksToYaml(items, indent) {
       continue;
     }
     out += pad + "- name: \"" + item.name.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
+    if (item.description) out += pad + "  description: \"" + item.description.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
     if (item.url) out += pad + "  url: \"" + item.url.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
     if (Array.isArray(item.children) && item.children.length > 0) {
       out += pad + "  children:\n";

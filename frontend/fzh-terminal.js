@@ -18,6 +18,7 @@ function bookmarksToYaml(items, indent) {
   let out = "";
   for (const item of items) {
     out += pad + "- name: \"" + item.name.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
+    if (item.description) out += pad + "  description: \"" + item.description.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
     if (item.url) out += pad + "  url: \"" + item.url.replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"\n";
     if (Array.isArray(item.children) && item.children.length > 0) {
       out += pad + "  children:\n";
