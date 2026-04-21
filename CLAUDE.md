@@ -101,22 +101,22 @@ The `fzt-automate` binary and the homepage web app both consume fzt-terminal. AT
 
 Settings and legacy data live in Azure Cosmos DB. Claude can query them directly via `az cli` + a read-only master key, bypassing the API's JWT auth.
 
-- **Account**: `infra-cosmos`
+- **Account**: `infra-cosmos-serverless`
 - **Resource group**: `infra` (found in `infra-bootstrap/tofu/main.tf` line 15–17: `data "azurerm_resource_group" "main" { name = "infra" }`)
 - **Database**: `HomepageDB` (found in `api/server.js` line 145: `cosmosClient.database('HomepageDB')`)
 - **Container**: `userdata` (found in `api/server.js` line 146: `homepageDb.container('userdata')`)
-- **Endpoint**: `https://infra-cosmos.documents.azure.com:443/`
+- **Endpoint**: `https://infra-cosmos-serverless.documents.azure.com:443/`
 
 ### Auth flow
 
 1. Check `az account show` — if not logged in, run `az login` (browser popup, one click)
-2. Get read-only key: `az cosmosdb keys list --name infra-cosmos --resource-group infra --type read-only-keys --query "primaryReadonlyMasterKey" -o tsv`
+2. Get read-only key: `az cosmosdb keys list --name infra-cosmos-serverless --resource-group infra --type read-only-keys --query "primaryReadonlyMasterKey" -o tsv`
 3. Query the Cosmos data plane using the key with HMAC-SHA256 auth headers (Python `urllib` + `hmac`). The `az cosmosdb sql query` subcommand does not exist in current az CLI — must use the REST data plane directly.
 
 ### Query details
 
 - Resource link for queries: `dbs/HomepageDB/colls/userdata`
-- POST to `https://infra-cosmos.documents.azure.com/dbs/HomepageDB/colls/userdata/docs`
+- POST to `https://infra-cosmos-serverless.documents.azure.com/dbs/HomepageDB/colls/userdata/docs`
 - Headers: `Authorization` (HMAC token), `x-ms-date`, `x-ms-version: 2018-12-31`, `Content-Type: application/query+json`, `x-ms-documentdb-isquery: True`, `x-ms-documentdb-query-enablecrosspartition: True`
 - Documents are keyed by `userId` + `type` (e.g., `type: "bookmarks"`, `type: "settings"`)
 
