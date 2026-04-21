@@ -101,10 +101,10 @@ The `fzt-automate` binary and the homepage web app both consume fzt-terminal. AT
 
 Settings and legacy data live in Azure Cosmos DB. Claude can query them directly via `az cli` + a read-only master key, bypassing the API's JWT auth.
 
-- **Account**: `infra-cosmos-serverless`
-- **Resource group**: `infra` (found in `infra-bootstrap/tofu/main.tf` line 15–17: `data "azurerm_resource_group" "main" { name = "infra" }`)
-- **Database**: `HomepageDB` (found in `api/server.js` line 145: `cosmosClient.database('HomepageDB')`)
-- **Container**: `userdata` (found in `api/server.js` line 146: `homepageDb.container('userdata')`)
+- **Account**: `infra-cosmos-serverless` (defined in `infra-bootstrap/tofu/cosmos-serverless.tf`)
+- **Resource group**: `infra`
+- **Database**: `HomepageDB`
+- **Containers**: `userdata` (settings + legacy per-user docs, partitioned by `/userId`) and `fzt-frontend-data` (bookmarks + the unified fzt tree, partitioned by `/userId`, accessed at runtime by fzt-frontend's backend)
 - **Endpoint**: `https://infra-cosmos-serverless.documents.azure.com:443/`
 
 ### Auth flow
