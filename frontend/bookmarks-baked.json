@@ -1,0 +1,351 @@
+{
+  "id": "nelson-r1-bookmarks",
+  "tree": [
+    {
+      "name": "argocd",
+      "url": "https://argocd.sharedscf.r1rcm.com/",
+      "children": [
+        {
+          "name": "dev",
+          "url": "https://argocd.dev.cloudmed.com",
+          "description": "Cloudmed dev cluster GitOps"
+        },
+        {
+          "name": "ppe",
+          "url": "https://argocd.ppe.cloudmed.com",
+          "description": "Cloudmed PPE cluster GitOps"
+        },
+        {
+          "name": "prd",
+          "url": "https://argocd.prod.cloudmed.com",
+          "description": "Cloudmed prod cluster GitOps"
+        },
+        {
+          "name": "central",
+          "url": "https://argocdc.prod.cloudmed.com",
+          "description": "Cloudmed central prod cluster GitOps"
+        }
+      ],
+      "description": "ArgoCD — shared SCF GitOps console"
+    },
+    {
+      "name": "OSMS",
+      "children": [
+        {
+          "name": "Grafana",
+          "children": [
+            {
+              "name": "dev",
+              "url": "https://cmedevcloudopsgrafana.dev.cloudmed.com/",
+              "description": "Cloudmed dev cloudops Grafana — metrics & dashboards"
+            },
+            {
+              "name": "ppe",
+              "url": "https://cmeppecloudopsgrafana.ppe.cloudmed.com/",
+              "description": "Cloudmed PPE cloudops Grafana"
+            },
+            {
+              "name": "prd",
+              "url": "https://cmeprdcloudopsgrafana.prod.cloudmed.com/",
+              "description": "Cloudmed prod cloudops Grafana"
+            },
+            {
+              "name": "argus",
+              "url": "http://grafana.argus.r1rcm.com/",
+              "children": [
+                {
+                  "name": "stg",
+                  "url": "http://grafana-stg.argus.r1rcm.com/",
+                  "description": "Argus Grafana — staging"
+                }
+              ],
+              "description": "Argus observability Grafana (legacy stack)"
+            }
+          ]
+        },
+        {
+          "name": "Prometheus",
+          "children": [
+            {
+              "name": "dev",
+              "url": "http://cmedevcloudopsprom.dev.cloudmed.com",
+              "description": "Cloudmed dev Prometheus — TSDB & query UI"
+            },
+            {
+              "name": "ppe",
+              "url": "http://cmeppecloudopsprom.ppe.cloudmed.com",
+              "description": "Cloudmed PPE Prometheus"
+            },
+            {
+              "name": "prd",
+              "url": "http://cmeprdcloudopsprom.prod.cloudmed.com",
+              "description": "Cloudmed prod Prometheus"
+            }
+          ]
+        },
+        {
+          "name": "Alertmanager",
+          "children": [
+            {
+              "name": "dev",
+              "url": "http://cmedevcloudopsalerts.dev.cloudmed.com",
+              "description": "Cloudmed dev Alertmanager — fired alert routing"
+            },
+            {
+              "name": "ppe",
+              "url": "http://cmeppecloudopsalerts.ppe.cloudmed.com",
+              "description": "Cloudmed PPE Alertmanager"
+            },
+            {
+              "name": "prd",
+              "url": "http://cmeprdcloudopsalerts.prod.cloudmed.com",
+              "description": "Cloudmed prod Alertmanager"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Azure Devops",
+      "url": "https://dev.azure.com/R1RCM-ORG/PhareOS%20Platform%20Engineering/_queries/query/659901ca-5dbc-4174-b672-1eadbf674fba/",
+      "description": "PhareOS Platform Engineering — ADO saved query"
+    },
+    {
+      "name": "Azure portal",
+      "url": "https://portal.azure.com/",
+      "children": [
+        {
+          "name": "entra",
+          "url": "https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview",
+          "description": "Microsoft Entra (Azure AD) overview blade"
+        },
+        {
+          "name": "PIM",
+          "url": "https://portal.azure.com/#view/Microsoft_Azure_PIMCommon/CommonMenuBlade/~/quickStart",
+          "description": "Privileged Identity Management — quick-start"
+        }
+      ],
+      "description": "Azure portal — subscription root"
+    },
+    {
+      "name": "Vault",
+      "url": "https://vault.prod.cloudmed.com:8200",
+      "children": [
+        {
+          "name": "dev",
+          "url": "https://vault.dev.cloudmed.com:8200",
+          "description": "Vault — dev environment"
+        },
+        {
+          "name": "ppe",
+          "url": "https://vault.ppe.cloudmed.com:8200",
+          "description": "Vault — PPE environment"
+        },
+        {
+          "name": "central",
+          "url": "https://vaultc.prod.cloudmed.com:8200",
+          "description": "Vault — central prod"
+        }
+      ],
+      "description": "HashiCorp Vault — prod (:8200)"
+    },
+    {
+      "name": "Service now",
+      "url": "https://r1rcmprod.service-now.com/navpage.d",
+      "children": [
+        {
+          "name": "github",
+          "url": "https://r1rcmprod.service-now.com/sp?id=sc_cat_item&sys_id=dc84a0781b523510b01e2172604bcbc4&sysparm_category=ce581ecd1b1af510b01e2172604bcbd1&catalog_id=e0d08b13c3330100c8b837659bba8fb4",
+          "description": "ServiceNow — GitHub access request catalog item"
+        }
+      ],
+      "description": "ServiceNow home"
+    },
+    {
+      "name": "Team Calendar",
+      "url": "https://mcrschicago.sharepoint.com/sites/EMDTeams/Lists/PhareOS%20Platform%20Engineering%20Calendar/calendar.aspx",
+      "description": "PhareOS Platform Engineering — SharePoint team calendar"
+    },
+    {
+      "name": "Github",
+      "url": "https://github.com/orgs/r1-development/repositories",
+      "children": [
+        {
+          "name": "sso",
+          "url": "http://github.com/enterprises/r1rcm-emu/sso",
+          "description": "r1rcm GitHub Enterprise — SSO entry"
+        },
+        {
+          "name": "Landing zones",
+          "url": "https://github.com/r1-development/landing-zones",
+          "description": "landing-zones repo — Terraform landing zones"
+        },
+        {
+          "name": "outputs",
+          "url": "https://github.com/r1-development/terraform-outputs-landing-zone",
+          "description": "terraform-outputs-landing-zone repo"
+        }
+      ],
+      "description": "r1-development org — repo list"
+    },
+    {
+      "name": "Traefik",
+      "url": "https://github.com/r1-development/traefik",
+      "children": [
+        {
+          "name": "Cloudmed",
+          "children": [
+            {
+              "name": "dev",
+              "url": "https://traefik.dev.cloudmed.com/dashboard/",
+              "description": "Cloudmed dev — Traefik ingress dashboard"
+            },
+            {
+              "name": "ppe",
+              "url": "https://traefik.ppe.cloudmed.com/dashboard/",
+              "description": "Cloudmed PPE — Traefik dashboard"
+            },
+            {
+              "name": "prd",
+              "url": "https://traefik.prod.cloudmed.com/dashboard/",
+              "description": "Cloudmed prod — Traefik dashboard"
+            },
+            {
+              "name": "central",
+              "url": "https://traefikc.prod.cloudmed.com/dashboard/",
+              "description": "Cloudmed central — Traefik dashboard"
+            }
+          ]
+        },
+        {
+          "name": "Shared",
+          "children": [
+            {
+              "name": "shared-dev",
+              "url": "https://traefik.shared-dev.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "shared-dev AKS (eastus2) — Traefik"
+            },
+            {
+              "name": "shared-stg",
+              "url": "https://traefik.shared-stg.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "shared-stg AKS — Traefik"
+            },
+            {
+              "name": "shared-uat",
+              "url": "https://traefik.shared-uat.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "shared-uat AKS — Traefik"
+            },
+            {
+              "name": "shared-prd",
+              "url": "https://traefik.shared-prd.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "shared-prd AKS — Traefik"
+            },
+            {
+              "name": "shared-dev-cus",
+              "url": "https://traefik.shared-dev-cus.privatelink.centralus.azmk8s.io/dashboard/",
+              "description": "shared-dev AKS (centralus) — Traefik"
+            }
+          ]
+        },
+        {
+          "name": "RCX",
+          "children": [
+            {
+              "name": "rcx-dev",
+              "url": "https://traefik.rcx-dev.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "RCX dev AKS — Traefik"
+            },
+            {
+              "name": "rcx-prp",
+              "url": "https://traefik.rcx-prp.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "RCX pre-prod AKS — Traefik"
+            },
+            {
+              "name": "rcx-prd",
+              "url": "https://traefik.rcx-prd.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "RCX prod AKS — Traefik"
+            }
+          ]
+        },
+        {
+          "name": "Astro",
+          "children": [
+            {
+              "name": "astro-dev",
+              "url": "https://traefik.astro-dev.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "Astro dev AKS — Traefik"
+            },
+            {
+              "name": "astro-prp",
+              "url": "https://traefik.astro-prp.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "Astro pre-prod AKS — Traefik"
+            },
+            {
+              "name": "astro-prd",
+              "url": "https://traefik.astro-prd.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "Astro prod AKS — Traefik"
+            }
+          ]
+        },
+        {
+          "name": "PET",
+          "children": [
+            {
+              "name": "pet-dev",
+              "url": "https://traefik.pet-dev.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "PET dev AKS — Traefik"
+            },
+            {
+              "name": "pet-stg",
+              "url": "https://traefik.pet-stg.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "PET staging AKS — Traefik"
+            },
+            {
+              "name": "pet-prd",
+              "url": "https://traefik.pet-prd.privatelink.eastus2.azmk8s.io/dashboard/",
+              "description": "PET prod AKS — Traefik"
+            }
+          ]
+        }
+      ],
+      "description": "r1-development/traefik repo"
+    },
+    {
+      "name": "Terraform Cloud",
+      "url": "https://app.terraform.io/app/CloudMed/workspaces",
+      "description": "Terraform Cloud — CloudMed workspaces"
+    },
+    {
+      "name": "Confluence",
+      "url": "https://id.atlassian.com/login?continue=https%3A%2F%2Fid.atlassian.com%2Fjoin%2Fuser-access%3Fresource%3Dari%253Acloud%253Aconfluence%253A%253Asite%252F54cb248c-9741-4259-81ec-adcd1c89db8c%26continue%3Dhttps%253A%252F%252Fr1rcm.atlassian.net%252Fwiki%252Fhome&application=confluence&orgId=f83fa4d5-5a9b-43b0-9417-47f14f7238bb",
+      "description": "r1rcm Atlassian Confluence — wiki"
+    },
+    {
+      "name": "workday",
+      "url": "https://www.myworkday.com/r1rcm/d/home.htmld",
+      "description": "Workday HR portal"
+    },
+    {
+      "name": "misc",
+      "children": [
+        {
+          "name": "netskope",
+          "url": "https://sb-r1rcm.goskope.com/ns#/settings?view=manage_custom_apps",
+          "description": "Netskope — custom-apps settings"
+        },
+        {
+          "name": "mongodb",
+          "url": "https://account.mongodb.com/account/login",
+          "description": "MongoDB Atlas — account login"
+        }
+      ]
+    },
+    {
+      "name": "pagerduty",
+      "url": "r1rcm.pagerduty.com",
+      "description": "r1rcm PagerDuty"
+    }
+  ],
+  "version": 1,
+  "updatedAt": "2026-04-19T02:23:48.168Z"
+}

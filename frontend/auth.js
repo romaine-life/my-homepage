@@ -7,6 +7,15 @@
 
 const STORAGE_KEY = 'homepage_jwt';
 
+// Baked-deploy mode — SWA bypass hostname (work-computer access where
+// *.romaine.life is blocked). Auth and API are inert; bookmarks are served
+// from a static JSON file shipped alongside the frontend. checkAuth and
+// fetchWhoami fake a nelson-r1 session so the authenticated UI renders
+// normally. Edit/save buttons stay wired but silently fail on API calls —
+// that's intentional per the deploy's read-only framing.
+const IS_BAKED = typeof window !== 'undefined' &&
+  window.location.hostname.endsWith('.azurestaticapps.net');
+
 // Absorb `#token=<jwt>` on module load (runs once per page load).
 (function absorbTokenFragment() {
   const match = window.location.hash.match(/#token=([A-Za-z0-9_\-.]+)/);
@@ -34,6 +43,7 @@ function parseJwt(t) {
 }
 
 export async function checkAuth() {
+  if (IS_BAKED) return true;
   const t = getToken();
   if (!t) return false;
   const payload = parseJwt(t);
@@ -49,6 +59,7 @@ export async function checkAuth() {
 }
 
 export async function fetchWhoami() {
+  if (IS_BAKED) return { sub: 'nelson-r1', name: 'r1', email: 'gromaine@r1rcm.com' };
   const t = getToken();
   if (!t) return null;
   const payload = parseJwt(t);

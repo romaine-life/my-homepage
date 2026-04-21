@@ -395,7 +395,28 @@ function clearPlaygroundBookmarks() {
 
 // ── API ─────────────────────────────────────────────────────────
 
+// Baked-deploy mode — see auth.js. On the SWA bypass hostname we can't reach
+// the live API (*.romaine.life is blocked on the target network), so we ship
+// bookmarks-baked.json alongside the frontend and serve them read-only.
+const IS_BAKED = window.location.hostname.endsWith('.azurestaticapps.net');
+
 async function fetchBookmarks() {
+  if (IS_BAKED) {
+    try {
+      const res = await fetch('/bookmarks-baked.json');
+      if (!res.ok) throw new Error(`baked fetch: ${res.status}`);
+      const data = await res.json();
+      lastFetchedVersion = data.version;
+      const bookmarks = data.tree || [];
+      originalBookmarks = deepClone(bookmarks);
+      hideApiError();
+      return bookmarks;
+    } catch (err) {
+      console.error("Failed to load baked bookmarks:", err);
+      showApiError(`Could not load baked bookmarks (${err.message})`);
+      return [];
+    }
+  }
   try {
     const treeId = await bookmarksTreeId();
     const url = `${CONFIG.fztApiBase}/fzt/tree/${treeId}`;
