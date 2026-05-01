@@ -2,8 +2,8 @@
 # Azure Blob Storage — Homepage Assets
 # ============================================================================
 # Shared storage account for profile pictures (public) and bookmarks (private).
-# The Container App's managed identity gets "Storage Blob Data Contributor"
-# so the backend can read/write blobs.
+# The shared workload identity (infra-shared-identity) gets "Storage Blob
+# Data Contributor" so the backend can read/write blobs.
 
 resource "azurerm_storage_account" "profile_pictures" {
   name                     = "homepageprofilepics"
@@ -32,9 +32,13 @@ resource "azurerm_storage_container" "profile_pictures" {
   container_access_type = "blob"
 }
 
-# Grant shared API's managed identity write access to the blob container
+data "azurerm_user_assigned_identity" "shared" {
+  name                = "infra-shared-identity"
+  resource_group_name = local.infra.resource_group_name
+}
+
 resource "azurerm_role_assignment" "shared_api_storage_contributor" {
   scope                = azurerm_storage_account.profile_pictures.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = "ae41eca7-9819-4028-8690-91a92e494893" # shared-api system-assigned identity
+  principal_id         = data.azurerm_user_assigned_identity.shared.principal_id
 }
