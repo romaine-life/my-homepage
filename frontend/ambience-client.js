@@ -23,6 +23,66 @@
 (function () {
 	'use strict';
 
+	function createPlaybackClock(opts) {
+		opts = opts || {};
+		const now = opts.now || (() => performance.now());
+		const tickMs = Math.max(1, opts.tickMs || 100);
+		const delayTicks = Math.max(0, opts.delayTicks || 0);
+		const softCatchupDrift = Math.max(1, opts.softCatchupDrift || 20);
+		const hardCatchupDrift = Math.max(softCatchupDrift, opts.hardCatchupDrift || 100);
+		const maxCatchupSteps = Math.max(1, opts.maxCatchupSteps || 5);
+		let authoritySampleTick = 0;
+		let authoritySampleAt = now();
+		let haveAuthoritySample = false;
+
+		function noteAuthorityTick(tick, sampleAt) {
+			if (!Number.isFinite(tick)) return;
+			authoritySampleTick = tick;
+			authoritySampleAt = Number.isFinite(sampleAt) ? sampleAt : now();
+			haveAuthoritySample = true;
+		}
+
+		function estimatedAuthorityTick(fallbackTick) {
+			if (!haveAuthoritySample) return Number.isFinite(fallbackTick) ? fallbackTick : 0;
+			const elapsedTicks = Math.floor((now() - authoritySampleAt) / tickMs);
+			return authoritySampleTick + Math.max(0, elapsedTicks);
+		}
+
+		function targetPlaybackTick(fallbackTick) {
+			return Math.max(0, estimatedAuthorityTick(fallbackTick) - delayTicks);
+		}
+
+		function stepsFor(currentTick) {
+			const current = Number.isFinite(currentTick) ? currentTick : 0;
+			const target = targetPlaybackTick(current);
+			const drift = target - current;
+			if (drift <= 0) return 0;
+			if (drift > hardCatchupDrift) return maxCatchupSteps;
+			if (drift > softCatchupDrift) return Math.min(maxCatchupSteps, 2);
+			return 1;
+		}
+
+		function debugState(currentTick, queuedCommands) {
+			const current = Number.isFinite(currentTick) ? currentTick : 0;
+			const authorityTick = estimatedAuthorityTick(current);
+			const playbackTick = targetPlaybackTick(current);
+			return {
+				authorityTick,
+				playbackTick,
+				simTick: current,
+				driftTicks: playbackTick - current,
+				delayTicks,
+				tickMs,
+				queuedCommands: queuedCommands || 0,
+				haveAuthoritySample,
+			};
+		}
+
+		return { noteAuthorityTick, estimatedAuthorityTick, targetPlaybackTick, stepsFor, debugState };
+	}
+
+	window.AmbienceClientClock = window.AmbienceClientClock || { createPlaybackClock };
+
 	const canvas = document.querySelector('canvas[data-ambience]');
 	if (!canvas) {
 		console.warn('ambience-client: no <canvas data-ambience> found');
@@ -69,27 +129,14 @@
 	let effectType = 'rain';
 	let sim = new AmbienceSim.effects[effectType](GRID_W, GRID_H, {});
 	let ready = false;
-	let authoritySampleTick = 0;
-	let authoritySampleAt = performance.now();
-	let haveAuthoritySample = false;
 	const pendingCommands = [];
-
-	function noteAuthorityTick(tick) {
-		if (!Number.isFinite(tick)) return;
-		authoritySampleTick = tick;
-		authoritySampleAt = performance.now();
-		haveAuthoritySample = true;
-	}
-
-	function estimatedAuthorityTick() {
-		if (!haveAuthoritySample) return getSimTick(sim);
-		const elapsedTicks = Math.floor((performance.now() - authoritySampleAt) / TICK_MS);
-		return authoritySampleTick + Math.max(0, elapsedTicks);
-	}
-
-	function targetPlaybackTick() {
-		return Math.max(0, estimatedAuthorityTick() - PLAYBACK_DELAY_TICKS);
-	}
+	const clock = createPlaybackClock({
+		tickMs: TICK_MS,
+		delayTicks: PLAYBACK_DELAY_TICKS,
+		softCatchupDrift: SOFT_CATCHUP_DRIFT,
+		hardCatchupDrift: HARD_CATCHUP_DRIFT,
+		maxCatchupSteps: MAX_CATCHUP_STEPS,
+	});
 
 	function getSimTick(s) {
 		if (!s) return 0;
@@ -99,17 +146,10 @@
 
 	function stepTowardAuthorityClock() {
 		const current = getSimTick(sim);
-		const target = targetPlaybackTick();
-		const drift = target - current;
-		if (drift <= 0) {
+		const steps = clock.stepsFor(current);
+		if (steps <= 0) {
 			applyDueCommands(current);
 			return;
-		}
-		let steps = 1;
-		if (drift > HARD_CATCHUP_DRIFT) {
-			steps = MAX_CATCHUP_STEPS;
-		} else if (drift > SOFT_CATCHUP_DRIFT) {
-			steps = Math.min(MAX_CATCHUP_STEPS, 2);
 		}
 		for (let i = 0; i < steps; i++) {
 			applyDueCommands(getSimTick(sim) + 1);
@@ -176,7 +216,7 @@
 	es.addEventListener('message', (e) => {
 		let cmd;
 		try { cmd = JSON.parse(e.data); } catch (_) { return; }
-		noteAuthorityTick(cmd.tick);
+		clock.noteAuthorityTick(cmd.tick);
 		const data = typeof cmd.data === 'string' ? JSON.parse(cmd.data) : cmd.data;
 		switch (cmd.kind) {
 			case 'snapshot':
@@ -188,6 +228,7 @@
 				break;
 			case 'metric':
 			case 'scene':
+			case 'clock':
 				break;
 			case 'config':
 			case 'trigger':
@@ -195,6 +236,10 @@
 				break;
 		}
 	});
+
+	window.AmbienceClient = {
+		getDebugState: () => Object.assign({ effectType, ready }, clock.debugState(getSimTick(sim), pendingCommands.length)),
+	};
 
 	// Combined 10 Hz tick (matches server atmosphere rate). Step + render
 	// in one setInterval — rAF pauses in background tabs and we don't need
