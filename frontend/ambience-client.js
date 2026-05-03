@@ -146,12 +146,23 @@
 	function revealInitialScene() {
 		if (initialFadeStarted) return;
 		initialFadeStarted = true;
-		if (INITIAL_FADE_MS <= 0) return;
-		const opacityTransition = `opacity ${INITIAL_FADE_MS}ms ease`;
-		canvas.style.transition = canvas.style.transition
-			? `${canvas.style.transition}, ${opacityTransition}`
-			: opacityTransition;
-		requestAnimationFrame(() => { canvas.style.opacity = '1'; });
+		if (INITIAL_FADE_MS <= 0) {
+			canvas.style.opacity = '1';
+			return;
+		}
+		if (canvas.animate) {
+			const fade = canvas.animate(
+				[{ opacity: 0 }, { opacity: 1 }],
+				{ duration: INITIAL_FADE_MS, easing: 'ease', fill: 'both' },
+			);
+			fade.finished
+				.then(() => { canvas.style.opacity = '1'; })
+				.catch(() => { canvas.style.opacity = '1'; });
+			return;
+		}
+		canvas.style.transition = `opacity ${INITIAL_FADE_MS}ms ease`;
+		canvas.offsetWidth;
+		canvas.style.opacity = '1';
 	}
 
 	function getSimTick(s) {
