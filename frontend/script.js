@@ -23,7 +23,7 @@ let pendingBookmarks = null; // fresh bookmarks from background fetch, awaiting 
 let dragAllowed = false;
 let dragState = null;
 let callerSub = null; // cached JWT sub from whoami — used to build tree ids
-let openSelectionInNewTab = false;
+let pendingSelectionTab = null;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
 
 async function bookmarksTreeId() {
@@ -56,8 +56,11 @@ function ensureAbsoluteUrl(url) {
 
 function openBookmarkUrl(url) {
   const absoluteUrl = ensureAbsoluteUrl(url);
-  if (openSelectionInNewTab) {
-    window.open(absoluteUrl, "_blank", "noopener");
+  if (pendingSelectionTab && !pendingSelectionTab.closed) {
+    const tab = pendingSelectionTab;
+    pendingSelectionTab = null;
+    tab.opener = null;
+    tab.location.href = absoluteUrl;
   } else {
     window.location.href = absoluteUrl;
   }
@@ -1361,8 +1364,11 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
   if (editMode) return;
   if (e.shiftKey && e.key === "Enter") {
-    openSelectionInNewTab = true;
-    queueMicrotask(() => { openSelectionInNewTab = false; });
+    pendingSelectionTab = window.open("about:blank", "_blank");
+    setTimeout(() => {
+      if (pendingSelectionTab && !pendingSelectionTab.closed) pendingSelectionTab.close();
+      pendingSelectionTab = null;
+    }, 0);
   }
 }, true);
 
@@ -1373,4 +1379,3 @@ document.addEventListener("keydown", (e) => {
 
 saveBtn.addEventListener("click", saveEdits);
 cancelBtn.addEventListener("click", cancelEdits);
-
