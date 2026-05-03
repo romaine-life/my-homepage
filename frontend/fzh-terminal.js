@@ -110,6 +110,10 @@ export function sendKey(key, ctrlKey, shiftKey) {
   if (_term) _term.handleKey(key, ctrlKey, shiftKey);
 }
 
+export function getVisibleRows() {
+  return _term ? _term.getVisibleRows() : [];
+}
+
 export function isTerminalReady() {
   return _term ? _term.isReady() : false;
 }
