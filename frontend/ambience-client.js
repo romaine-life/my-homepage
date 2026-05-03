@@ -123,11 +123,11 @@
 	resize();
 	window.addEventListener('resize', resize);
 
-	// The first snapshot tells us what effect is running. Until then we
-	// default to rain so we have something to paint during the brief
-	// connection window.
-	let effectType = 'rain';
-	let sim = new AmbienceSim.effects[effectType](GRID_W, GRID_H, {});
+	// The first snapshot tells us what effect is running. Until then, render
+	// nothing; creating a local fallback effect makes subscribers visibly
+	// diverge and can crossfade two worlds together during startup.
+	let effectType = null;
+	let sim = null;
 	let ready = false;
 	const pendingCommands = [];
 	const clock = createPlaybackClock({
@@ -181,12 +181,16 @@
 		switch (cmd.kind) {
 			case 'snapshot': {
 				const newType = (data && data.type) || 'rain';
-				if (newType !== effectType) {
-					const ctor = AmbienceSim.effects[newType];
-					if (!ctor) {
-						console.warn('ambience-client: unknown effect type', newType);
-						break;
-					}
+				const ctor = AmbienceSim.effects[newType];
+				if (!ctor) {
+					console.warn('ambience-client: unknown effect type', newType);
+					break;
+				}
+				if (!sim) {
+					sim = new ctor(GRID_W, GRID_H, {});
+					try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
+					effectType = newType;
+				} else if (newType !== effectType) {
 					const incoming = new ctor(GRID_W, GRID_H, {});
 					try { incoming.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
 					sim = AmbienceSim.EffectTransition
@@ -200,10 +204,11 @@
 				break;
 			}
 			case 'config':
+				if (!sim) break;
 				try { sim.setConfig(data); } catch (err) { console.error('bad config', err); }
 				break;
 			case 'trigger':
-				if (sim.triggerEvent) sim.triggerEvent(cmd.event);
+				if (sim && sim.triggerEvent) sim.triggerEvent(cmd.event);
 				break;
 		}
 	}
@@ -248,6 +253,7 @@
 		if (ready) stepTowardAuthorityClock();
 		// Unwrap a finished crossfade so we drop the outgoing sim and stop
 		// paying its render cost.
+		if (!sim) return;
 		if (sim.isTransition && sim.done()) sim = sim.incoming;
 		sim.render(ctx, canvas.width, canvas.height, { transparent: TRANSPARENT });
 	}, 100);
