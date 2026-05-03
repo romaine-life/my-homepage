@@ -15,6 +15,7 @@
 //   data-ambience-transparent="false"  — paint solid bg (default: true)
 //   data-ambience-entropy="off"        — disable keystroke entropy upload
 //   data-ambience-delay-ticks="50"     — render this many 10 Hz ticks behind authority
+//   data-ambience-initial-fade-ms="1200" — fade in after the first authority snapshot
 //
 // Effect agnostic: the server's snapshot broadcasts the effect type; this
 // file looks it up in AmbienceSim.effects[type]. Adding a new effect means
@@ -105,6 +106,7 @@
 	const ENTROPY_ENABLED = canvas.dataset.ambienceEntropy !== 'off';
 	const TICK_MS = 100;
 	const PLAYBACK_DELAY_TICKS = Math.max(0, parseInt(canvas.dataset.ambienceDelayTicks || '50', 10) || 0);
+	const INITIAL_FADE_MS = Math.max(0, parseInt(canvas.dataset.ambienceInitialFadeMs || '1200', 10) || 0);
 	const MAX_CATCHUP_STEPS = 5;
 	const SOFT_CATCHUP_DRIFT = 20;
 	const HARD_CATCHUP_DRIFT = 100;
@@ -129,6 +131,8 @@
 	let effectType = null;
 	let sim = null;
 	let ready = false;
+	let initialFadePending = false;
+	let initialFadeStarted = false;
 	const pendingCommands = [];
 	const clock = createPlaybackClock({
 		tickMs: TICK_MS,
@@ -137,6 +141,18 @@
 		hardCatchupDrift: HARD_CATCHUP_DRIFT,
 		maxCatchupSteps: MAX_CATCHUP_STEPS,
 	});
+	if (INITIAL_FADE_MS > 0) canvas.style.opacity = '0';
+
+	function revealInitialScene() {
+		if (initialFadeStarted) return;
+		initialFadeStarted = true;
+		if (INITIAL_FADE_MS <= 0) return;
+		const opacityTransition = `opacity ${INITIAL_FADE_MS}ms ease`;
+		canvas.style.transition = canvas.style.transition
+			? `${canvas.style.transition}, ${opacityTransition}`
+			: opacityTransition;
+		requestAnimationFrame(() => { canvas.style.opacity = '1'; });
+	}
 
 	function getSimTick(s) {
 		if (!s) return 0;
@@ -190,6 +206,7 @@
 					sim = new ctor(GRID_W, GRID_H, {});
 					try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
 					effectType = newType;
+					initialFadePending = true;
 				} else if (newType !== effectType) {
 					const incoming = new ctor(GRID_W, GRID_H, {});
 					try { incoming.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
@@ -243,7 +260,10 @@
 	});
 
 	window.AmbienceClient = {
-		getDebugState: () => Object.assign({ effectType, ready }, clock.debugState(getSimTick(sim), pendingCommands.length)),
+		getDebugState: () => Object.assign(
+			{ effectType, ready, initialFadeStarted },
+			clock.debugState(getSimTick(sim), pendingCommands.length),
+		),
 	};
 
 	// Combined 10 Hz tick (matches server atmosphere rate). Step + render
@@ -256,6 +276,10 @@
 		if (!sim) return;
 		if (sim.isTransition && sim.done()) sim = sim.incoming;
 		sim.render(ctx, canvas.width, canvas.height, { transparent: TRANSPARENT });
+		if (initialFadePending) {
+			initialFadePending = false;
+			revealInitialScene();
+		}
 	}, 100);
 
 	// ── Entropy ──────────────────────────────────────────────────
