@@ -16,6 +16,7 @@
 //   data-ambience-entropy="off"        — disable keystroke entropy upload
 //   data-ambience-delay-ticks="50"     — render this many 10 Hz ticks behind authority
 //   data-ambience-initial-fade-ms="1200" — fade in after the first authority snapshot
+//   data-ambience-initial-fade-color="#050505" — startup cover color
 //
 // Effect agnostic: the server's snapshot broadcasts the effect type; this
 // file looks it up in AmbienceSim.effects[type]. Adding a new effect means
@@ -112,6 +113,7 @@
 	const HARD_CATCHUP_DRIFT = 100;
 
 	const ctx = canvas.getContext('2d');
+	let initialFadeCover = null;
 
 	// Mark body so consumer CSS can conditionally adapt (e.g. make terminal
 	// backgrounds transparent only when ambience is actually running).
@@ -141,28 +143,55 @@
 		hardCatchupDrift: HARD_CATCHUP_DRIFT,
 		maxCatchupSteps: MAX_CATCHUP_STEPS,
 	});
-	if (INITIAL_FADE_MS > 0) canvas.style.opacity = '0';
+
+	function makeInitialFadeCover() {
+		if (INITIAL_FADE_MS <= 0) return null;
+		const cover = document.createElement('div');
+		const canvasStyle = getComputedStyle(canvas);
+		const bodyStyle = getComputedStyle(document.body);
+		const color =
+			canvas.dataset.ambienceInitialFadeColor ||
+			bodyStyle.backgroundColor ||
+			'#000';
+		cover.setAttribute('aria-hidden', 'true');
+		cover.style.position = 'fixed';
+		cover.style.inset = '0';
+		cover.style.pointerEvents = 'none';
+		cover.style.background = color;
+		cover.style.opacity = '1';
+		cover.style.zIndex = canvasStyle.zIndex === 'auto' ? 'auto' : canvasStyle.zIndex;
+		cover.style.willChange = 'opacity';
+		canvas.insertAdjacentElement('afterend', cover);
+		return cover;
+	}
+
+	initialFadeCover = makeInitialFadeCover();
 
 	function revealInitialScene() {
 		if (initialFadeStarted) return;
 		initialFadeStarted = true;
-		if (INITIAL_FADE_MS <= 0) {
-			canvas.style.opacity = '1';
+		if (!initialFadeCover || INITIAL_FADE_MS <= 0) {
+			if (initialFadeCover) initialFadeCover.remove();
+			initialFadeCover = null;
 			return;
 		}
-		if (canvas.animate) {
-			const fade = canvas.animate(
-				[{ opacity: 0 }, { opacity: 1 }],
+		const cover = initialFadeCover;
+		if (cover.animate) {
+			const fade = cover.animate(
+				[{ opacity: 1 }, { opacity: 0 }],
 				{ duration: INITIAL_FADE_MS, easing: 'ease', fill: 'both' },
 			);
 			fade.finished
-				.then(() => { canvas.style.opacity = '1'; })
-				.catch(() => { canvas.style.opacity = '1'; });
+				.then(() => { cover.remove(); })
+				.catch(() => { cover.remove(); });
+			initialFadeCover = null;
 			return;
 		}
-		canvas.style.transition = `opacity ${INITIAL_FADE_MS}ms ease`;
-		canvas.offsetWidth;
-		canvas.style.opacity = '1';
+		cover.style.transition = `opacity ${INITIAL_FADE_MS}ms ease`;
+		cover.offsetWidth;
+		cover.style.opacity = '0';
+		setTimeout(() => { cover.remove(); }, INITIAL_FADE_MS + 50);
+		initialFadeCover = null;
 	}
 
 	function getSimTick(s) {
