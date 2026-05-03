@@ -35,8 +35,8 @@ export async function initFzhTerminal(containerEl) {
   _term = createFztWeb(containerEl, {
     containerPadding: 8,
     defaultCursorPos: null,
-    onAction: (action, url) => {
-      if (_onAction) _onAction(action, url);
+    onAction: (action, url, event) => {
+      if (_onAction) _onAction(action, url, event);
     },
   });
 
@@ -106,12 +106,8 @@ export function onAction(callback) {
   _onAction = callback;
 }
 
-export function sendKey(key, ctrlKey, shiftKey) {
-  if (_term) _term.handleKey(key, ctrlKey, shiftKey);
-}
-
-export function getVisibleRows() {
-  return _term ? _term.getVisibleRows() : [];
+export function sendKey(key, ctrlKey, shiftKey, altKey = false, metaKey = false) {
+  if (_term) _term.handleKey(key, ctrlKey, shiftKey, altKey, metaKey);
 }
 
 export function isTerminalReady() {
