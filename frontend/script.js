@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, hidePalette as hideFzhPalette, setStatus as setFzhStatus, clearStatus as clearFzhStatus } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, hidePalette as hideFzhPalette, setStatus as setFzhStatus, clearStatus as clearFzhStatus, getVisibleRows as getFzhVisibleRows } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -23,7 +23,7 @@ let pendingBookmarks = null; // fresh bookmarks from background fetch, awaiting 
 let dragAllowed = false;
 let dragState = null;
 let callerSub = null; // cached JWT sub from whoami — used to build tree ids
-let pendingSelectionTab = null;
+let newTabSelectionUrl = null;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
 
 async function bookmarksTreeId() {
@@ -56,14 +56,41 @@ function ensureAbsoluteUrl(url) {
 
 function openBookmarkUrl(url) {
   const absoluteUrl = ensureAbsoluteUrl(url);
-  if (pendingSelectionTab && !pendingSelectionTab.closed) {
-    const tab = pendingSelectionTab;
-    pendingSelectionTab = null;
-    tab.opener = null;
-    tab.location.href = absoluteUrl;
+  if (newTabSelectionUrl === absoluteUrl) {
+    newTabSelectionUrl = null;
   } else {
     window.location.href = absoluteUrl;
   }
+}
+
+function findBookmarkByPath(items, path) {
+  let level = items;
+  let found = null;
+  for (const name of path) {
+    found = (level || []).find(item => item.name === name);
+    if (!found) return null;
+    level = found.children;
+  }
+  return found;
+}
+
+function selectedTerminalBookmarkUrl() {
+  const rows = getFzhVisibleRows();
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const selectedIndex = rows.findIndex(row => row && row.isSelected);
+  const rowIndex = selectedIndex >= 0 ? selectedIndex : rows.findIndex(row => row && row.isTopMatch);
+  if (rowIndex < 0) return null;
+
+  const path = [];
+  for (let i = 0; i <= rowIndex; i++) {
+    const row = rows[i];
+    if (!row || row.depth < 0 || !row.name) continue;
+    path[row.depth] = row.name;
+    path.length = row.depth + 1;
+  }
+
+  const item = findBookmarkByPath(currentBookmarks, path);
+  return item && item.url ? ensureAbsoluteUrl(item.url) : null;
 }
 
 const SAMPLE_BOOKMARKS = [
@@ -1364,11 +1391,11 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
   if (editMode) return;
   if (e.shiftKey && e.key === "Enter") {
-    pendingSelectionTab = window.open("about:blank", "_blank");
-    setTimeout(() => {
-      if (pendingSelectionTab && !pendingSelectionTab.closed) pendingSelectionTab.close();
-      pendingSelectionTab = null;
-    }, 0);
+    const url = selectedTerminalBookmarkUrl();
+    if (!url) return;
+    newTabSelectionUrl = url;
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => { newTabSelectionUrl = null; }, 2000);
   }
 }, true);
 
