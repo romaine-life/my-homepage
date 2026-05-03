@@ -23,6 +23,7 @@ let pendingBookmarks = null; // fresh bookmarks from background fetch, awaiting 
 let dragAllowed = false;
 let dragState = null;
 let callerSub = null; // cached JWT sub from whoami — used to build tree ids
+let openSelectionInNewTab = false;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
 
 async function bookmarksTreeId() {
@@ -51,6 +52,15 @@ function showTree() {
 function ensureAbsoluteUrl(url) {
   if (url && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) return "https://" + url;
   return url;
+}
+
+function openBookmarkUrl(url) {
+  const absoluteUrl = ensureAbsoluteUrl(url);
+  if (openSelectionInNewTab) {
+    window.open(absoluteUrl, "_blank", "noopener");
+  } else {
+    window.location.href = absoluteUrl;
+  }
 }
 
 const SAMPLE_BOOKMARKS = [
@@ -88,7 +98,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   // Wire up fzt action callback
   onTerminalAction(async (action, url) => {
     if (action.startsWith("select:") && url) {
-      window.location.href = ensureAbsoluteUrl(url);
+      openBookmarkUrl(url);
     } else if (action === "refresh") {
       triggerManualSync();
     } else if (action === "edit") {
@@ -1349,10 +1359,18 @@ function yamlToBookmarks(text) {
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
+  if (editMode) return;
+  if (e.shiftKey && e.key === "Enter") {
+    openSelectionInNewTab = true;
+    queueMicrotask(() => { openSelectionInNewTab = false; });
+  }
+}, true);
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, textarea, select")) return;
   if (e.shiftKey && e.key === "Enter" && editMode) { e.preventDefault(); saveEdits(); return; }
 });
 
 saveBtn.addEventListener("click", saveEdits);
 cancelBtn.addEventListener("click", cancelEdits);
-
 
