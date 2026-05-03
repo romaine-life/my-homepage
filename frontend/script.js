@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, hidePalette as hideFzhPalette, setStatus as setFzhStatus, clearStatus as clearFzhStatus, getVisibleRows as getFzhVisibleRows } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, hidePalette as hideFzhPalette, setStatus as setFzhStatus, clearStatus as clearFzhStatus } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -23,7 +23,6 @@ let pendingBookmarks = null; // fresh bookmarks from background fetch, awaiting 
 let dragAllowed = false;
 let dragState = null;
 let callerSub = null; // cached JWT sub from whoami — used to build tree ids
-let newTabSelectionUrl = null;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
 
 async function bookmarksTreeId() {
@@ -54,43 +53,13 @@ function ensureAbsoluteUrl(url) {
   return url;
 }
 
-function openBookmarkUrl(url) {
+function openBookmarkUrl(url, options = {}) {
   const absoluteUrl = ensureAbsoluteUrl(url);
-  if (newTabSelectionUrl === absoluteUrl) {
-    newTabSelectionUrl = null;
+  if (options.newTab) {
+    window.open(absoluteUrl, "_blank", "noopener");
   } else {
     window.location.href = absoluteUrl;
   }
-}
-
-function findBookmarkByPath(items, path) {
-  let level = items;
-  let found = null;
-  for (const name of path) {
-    found = (level || []).find(item => item.name === name);
-    if (!found) return null;
-    level = found.children;
-  }
-  return found;
-}
-
-function selectedTerminalBookmarkUrl() {
-  const rows = getFzhVisibleRows();
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  const selectedIndex = rows.findIndex(row => row && row.isSelected);
-  const rowIndex = selectedIndex >= 0 ? selectedIndex : rows.findIndex(row => row && row.isTopMatch);
-  if (rowIndex < 0) return null;
-
-  const path = [];
-  for (let i = 0; i <= rowIndex; i++) {
-    const row = rows[i];
-    if (!row || row.depth < 0 || !row.name) continue;
-    path[row.depth] = row.name;
-    path.length = row.depth + 1;
-  }
-
-  const item = findBookmarkByPath(currentBookmarks, path);
-  return item && item.url ? ensureAbsoluteUrl(item.url) : null;
 }
 
 const SAMPLE_BOOKMARKS = [
@@ -126,9 +95,11 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   setTerminalActive(true);
 
   // Wire up fzt action callback
-  onTerminalAction(async (action, url) => {
+  onTerminalAction(async (action, url, event) => {
     if (action.startsWith("select:") && url) {
-      openBookmarkUrl(url);
+      openBookmarkUrl(url, {
+        newTab: event && event.source === "keyboard" && event.key === "Enter" && event.shiftKey,
+      });
     } else if (action === "refresh") {
       triggerManualSync();
     } else if (action === "edit") {
@@ -1386,18 +1357,6 @@ function yamlToBookmarks(text) {
 }
 
 // ── Keyboard shortcuts ──────────────────────────────────────────
-
-document.addEventListener("keydown", (e) => {
-  if (e.target.matches("input, textarea, select")) return;
-  if (editMode) return;
-  if (e.shiftKey && e.key === "Enter") {
-    const url = selectedTerminalBookmarkUrl();
-    if (!url) return;
-    newTabSelectionUrl = url;
-    window.open(url, "_blank", "noopener");
-    setTimeout(() => { newTabSelectionUrl = null; }, 2000);
-  }
-}, true);
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
