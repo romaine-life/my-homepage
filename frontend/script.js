@@ -56,7 +56,9 @@ function ensureAbsoluteUrl(url) {
 function openBookmarkUrl(url, options = {}) {
   const absoluteUrl = ensureAbsoluteUrl(url);
   if (options.newTab) {
-    window.open(absoluteUrl, "_blank", "noopener");
+    window.dispatchEvent(new CustomEvent("homepage:open-tab", {
+      detail: { url: absoluteUrl, active: options.active !== false },
+    }));
   } else {
     window.location.href = absoluteUrl;
   }
@@ -97,8 +99,10 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   // Wire up fzt action callback
   onTerminalAction(async (action, url, event) => {
     if (action.startsWith("select:") && url) {
+      const keyboardEnter = event && event.source === "keyboard" && event.key === "Enter";
       openBookmarkUrl(url, {
-        newTab: event && event.source === "keyboard" && event.key === "Enter" && event.shiftKey,
+        newTab: keyboardEnter && event.ctrlKey,
+        active: !(keyboardEnter && event.ctrlKey && !event.shiftKey),
       });
     } else if (action === "refresh") {
       triggerManualSync();
