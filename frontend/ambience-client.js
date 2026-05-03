@@ -14,6 +14,7 @@
 //   data-ambience-grid-w="200" / data-ambience-grid-h="100" — sim grid size
 //   data-ambience-transparent="false"  — paint solid bg (default: true)
 //   data-ambience-entropy="off"        — disable keystroke entropy upload
+//   data-ambience-delay-ticks="50"     — render this many 10 Hz ticks behind authority
 //
 // Effect agnostic: the server's snapshot broadcasts the effect type; this
 // file looks it up in AmbienceSim.effects[type]. Adding a new effect means
@@ -42,6 +43,11 @@
 	const GRID_H = parseInt(canvas.dataset.ambienceGridH || '100', 10);
 	const TRANSPARENT = canvas.dataset.ambienceTransparent !== 'false';
 	const ENTROPY_ENABLED = canvas.dataset.ambienceEntropy !== 'off';
+	const TICK_MS = 100;
+	const PLAYBACK_DELAY_TICKS = Math.max(0, parseInt(canvas.dataset.ambienceDelayTicks || '50', 10) || 0);
+	const MAX_CATCHUP_STEPS = 5;
+	const SOFT_CATCHUP_DRIFT = 20;
+	const HARD_CATCHUP_DRIFT = 100;
 
 	const ctx = canvas.getContext('2d');
 
@@ -63,15 +69,75 @@
 	let effectType = 'rain';
 	let sim = new AmbienceSim.effects[effectType](GRID_W, GRID_H, {});
 	let ready = false;
+	let authoritySampleTick = 0;
+	let authoritySampleAt = performance.now();
+	let haveAuthoritySample = false;
+	const pendingCommands = [];
 
-	// Patch the subscribe snapshot handler so we can detect effect-type
-	// changes (for when more effects ship). The shared subscribe() swaps
-	// config on the existing sim; a type switch requires rebuilding.
-	const es = new EventSource(SERVER.replace(/\/+$/, '') + '/events');
-	es.addEventListener('message', (e) => {
-		let cmd;
-		try { cmd = JSON.parse(e.data); } catch (_) { return; }
-		const data = typeof cmd.data === 'string' ? JSON.parse(cmd.data) : cmd.data;
+	function noteAuthorityTick(tick) {
+		if (!Number.isFinite(tick)) return;
+		authoritySampleTick = tick;
+		authoritySampleAt = performance.now();
+		haveAuthoritySample = true;
+	}
+
+	function estimatedAuthorityTick() {
+		if (!haveAuthoritySample) return getSimTick(sim);
+		const elapsedTicks = Math.floor((performance.now() - authoritySampleAt) / TICK_MS);
+		return authoritySampleTick + Math.max(0, elapsedTicks);
+	}
+
+	function targetPlaybackTick() {
+		return Math.max(0, estimatedAuthorityTick() - PLAYBACK_DELAY_TICKS);
+	}
+
+	function getSimTick(s) {
+		if (!s) return 0;
+		if (s.isTransition && s.incoming) return getSimTick(s.incoming);
+		return Number.isFinite(s.tick) ? s.tick : 0;
+	}
+
+	function stepTowardAuthorityClock() {
+		const current = getSimTick(sim);
+		const target = targetPlaybackTick();
+		const drift = target - current;
+		if (drift <= 0) {
+			applyDueCommands(current);
+			return;
+		}
+		let steps = 1;
+		if (drift > HARD_CATCHUP_DRIFT) {
+			steps = MAX_CATCHUP_STEPS;
+		} else if (drift > SOFT_CATCHUP_DRIFT) {
+			steps = Math.min(MAX_CATCHUP_STEPS, 2);
+		}
+		for (let i = 0; i < steps; i++) {
+			applyDueCommands(getSimTick(sim) + 1);
+			sim.step();
+		}
+		applyDueCommands(getSimTick(sim));
+	}
+
+	function queueCommand(cmd, data) {
+		pendingCommands.push({ cmd, data });
+		pendingCommands.sort((a, b) => {
+			const at = Number.isFinite(a.cmd.tick) ? a.cmd.tick : 0;
+			const bt = Number.isFinite(b.cmd.tick) ? b.cmd.tick : 0;
+			return at - bt;
+		});
+	}
+
+	function applyDueCommands(playbackTick) {
+		while (pendingCommands.length > 0) {
+			const item = pendingCommands[0];
+			const tick = Number.isFinite(item.cmd.tick) ? item.cmd.tick : playbackTick;
+			if (tick > playbackTick) return;
+			pendingCommands.shift();
+			applyCommandNow(item.cmd, item.data);
+		}
+	}
+
+	function applyCommandNow(cmd, data) {
 		switch (cmd.kind) {
 			case 'snapshot': {
 				const newType = (data && data.type) || 'rain';
@@ -81,10 +147,15 @@
 						console.warn('ambience-client: unknown effect type', newType);
 						break;
 					}
+					const incoming = new ctor(GRID_W, GRID_H, {});
+					try { incoming.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
+					sim = AmbienceSim.EffectTransition
+						? new AmbienceSim.EffectTransition(sim, incoming)
+						: incoming;
 					effectType = newType;
-					sim = new ctor(GRID_W, GRID_H, {});
+				} else {
+					try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
 				}
-				try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
 				ready = true;
 				break;
 			}
@@ -95,13 +166,44 @@
 				if (sim.triggerEvent) sim.triggerEvent(cmd.event);
 				break;
 		}
+	}
+
+	// Patch the subscribe snapshot handler so we can detect effect-type
+	// changes (for when more effects ship). The shared subscribe() swaps
+	// config on the existing sim; a type switch crossfades the outgoing
+	// effect into the incoming one via AmbienceSim.EffectTransition.
+	const es = new EventSource(SERVER.replace(/\/+$/, '') + '/events');
+	es.addEventListener('message', (e) => {
+		let cmd;
+		try { cmd = JSON.parse(e.data); } catch (_) { return; }
+		noteAuthorityTick(cmd.tick);
+		const data = typeof cmd.data === 'string' ? JSON.parse(cmd.data) : cmd.data;
+		switch (cmd.kind) {
+			case 'snapshot':
+				if (!ready) {
+					applyCommandNow(cmd, data);
+				} else {
+					queueCommand(cmd, data);
+				}
+				break;
+			case 'metric':
+			case 'scene':
+				break;
+			case 'config':
+			case 'trigger':
+				queueCommand(cmd, data);
+				break;
+		}
 	});
 
 	// Combined 10 Hz tick (matches server atmosphere rate). Step + render
 	// in one setInterval — rAF pauses in background tabs and we don't need
 	// 60 Hz for a 10 Hz sim.
 	setInterval(() => {
-		if (ready) sim.step();
+		if (ready) stepTowardAuthorityClock();
+		// Unwrap a finished crossfade so we drop the outgoing sim and stop
+		// paying its render cost.
+		if (sim.isTransition && sim.done()) sim = sim.incoming;
 		sim.render(ctx, canvas.width, canvas.height, { transparent: TRANSPARENT });
 	}, 100);
 
