@@ -8150,6 +8150,41 @@ window.AmbienceSim = window.AmbienceSim || { effects: {}, presets: {} };
 			ctx.globalAlpha = 1;
 		}
 
+		_paintCraterGlow(ctx, sx, sy, ceilSx, ceilSy, centerX, peakRow, craterHalf, glowStrength) {
+			if (glowStrength <= 0.02) return;
+			const glowHue = (this.cfg.hue + 4) % 360;
+			const core = hslToRGB(glowHue, clamp01(this.cfg.sat * 0.95), clamp01(this.cfg.lmax * (0.7 + glowStrength * 0.25)));
+			const outer = hslToRGB((this.cfg.hue + 350) % 360, clamp01(this.cfg.sat), clamp01(this.cfg.lmin + (this.cfg.lmax - this.cfg.lmin) * 0.45));
+			const maxRise = Math.max(5, Math.round(4 + glowStrength * 11));
+			const maxSide = Math.max(craterHalf + 3, Math.round(craterHalf + glowStrength * 16));
+			const bandH = Math.max(1, Math.round(1 + glowStrength * 1.6));
+
+			for (let band = maxRise; band >= 0; band--) {
+				const lift = band / Math.max(1, maxRise);
+				const width = Math.max(craterHalf + 1, Math.round(maxSide * (1 - lift * 0.62)));
+				const row = peakRow - band;
+				const colorMix = 1 - lift;
+				const color = colorMix > 0.58 ? core : outer;
+				const baseAlpha = clamp01((0.08 + glowStrength * 0.38) * (1 - lift * 0.78));
+				for (let dx = -width; dx <= width; dx++) {
+					const side = Math.abs(dx) / Math.max(1, width);
+					const checker = (dx + band + this.tick) & 1;
+					const edgeNoise = this._hash(33400 + band * 31 + dx) * 0.22;
+					const alpha = clamp01(baseAlpha * (1 - side * 0.72 + edgeNoise) * (checker ? 0.72 : 1));
+					if (alpha < 0.035) continue;
+					this._fillCell(ctx, sx, sy, ceilSx, ceilSy, centerX + dx, row, 1, bandH, `rgb(${color.r},${color.g},${color.b})`, alpha);
+				}
+			}
+
+			const floorRows = Math.max(2, Math.round(2 + glowStrength * 3));
+			for (let y = 0; y < floorRows; y++) {
+				const width = Math.max(craterHalf + 2, Math.round(maxSide * (0.55 - y * 0.08)));
+				const row = peakRow + y;
+				const alpha = clamp01((0.12 + glowStrength * 0.3) * (1 - y / Math.max(1, floorRows)));
+				this._fillCell(ctx, sx, sy, ceilSx, ceilSy, centerX - width, row, width * 2 + 1, 1, `rgb(${outer.r},${outer.g},${outer.b})`, alpha);
+			}
+		}
+
 		triggerEvent(name) {
 			const rng = this._eventRng(name.length + 97);
 			switch (name) {
@@ -8299,18 +8334,7 @@ window.AmbienceSim = window.AmbienceSim || { effects: {}, presets: {} };
 
 			// idle crater glow + flare bloom
 			const glowStrength = clamp01(this.cfg.glow * pressure * (flareActive ? flareGain : 1));
-			const glowX = centerX * sx;
-			const glowY = peakRow * sy;
-			const glowR = Math.max(28, Math.min(canvasW, canvasH) * (0.07 + glowStrength * 0.18));
-			const glowGrad = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, glowR);
-			const glowHue = (this.cfg.hue + 4) % 360;
-			const glowCore = hslToRGB(glowHue, clamp01(this.cfg.sat * 0.95), clamp01(this.cfg.lmax * (0.7 + glowStrength * 0.25)));
-			const glowOuter = hslToRGB((this.cfg.hue + 350) % 360, clamp01(this.cfg.sat), clamp01(this.cfg.lmin + (this.cfg.lmax - this.cfg.lmin) * 0.45));
-			glowGrad.addColorStop(0, `rgba(${glowCore.r},${glowCore.g},${glowCore.b},${0.35 + glowStrength * 0.45})`);
-			glowGrad.addColorStop(0.45, `rgba(${glowOuter.r},${glowOuter.g},${glowOuter.b},${0.18 + glowStrength * 0.22})`);
-			glowGrad.addColorStop(1, `rgba(${glowOuter.r},${glowOuter.g},${glowOuter.b},0)`);
-			ctx.fillStyle = glowGrad;
-			ctx.fillRect(glowX - glowR, glowY - glowR, glowR * 2, glowR * 2);
+			this._paintCraterGlow(ctx, sx, sy, ceilSx, ceilSy, centerX, peakRow, craterHalf, glowStrength);
 
 			// crater rim hot lining
 			for (let dx = -craterHalf; dx <= craterHalf; dx++) {
