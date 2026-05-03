@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Homepage New Tab",
-  "version": "1.0",
-  "description": "Opens homepage.romaine.life in a new tab via keyboard shortcut",
+  "version": "1.1",
+  "description": "Opens homepage.romaine.life and selected homepage links in Chrome tabs",
+  "permissions": ["tabs"],
+  "host_permissions": ["https://homepage.romaine.life/*"],
   "commands": {
     "open-homepage": {
       "suggested_key": {
@@ -11,6 +13,13 @@
       "description": "Open homepage in a new tab"
     }
   },
+  "content_scripts": [
+    {
+      "matches": ["https://homepage.romaine.life/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
   "background": {
     "service_worker": "background.js"
   }
