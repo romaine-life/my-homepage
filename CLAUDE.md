@@ -2,6 +2,15 @@
 
 Bookmark manager web app hosted at homepage.romaine.life.
 
+## Container Build Verification
+
+Agent pods are not expected to have Docker. Do not report missing local Docker
+as a blocker. Run available repo checks first, then use PR CI as the normal
+container build gate: `.github/workflows/docker-build-check.yml` performs a
+throwaway Docker build with `push: false`. If image-packaging feedback is
+needed before a PR is ready, manually dispatch that workflow with `git_ref`.
+Release/deploy workflows are the only path that publishes images.
+
 ## Auth
 
 Terminal-minted JWTs — no browser-side auth UI. The PowerShell `login` function (profile-1) calls `romaine-api.py login`, which reads a profile-specific identity config (`${PROFILE_DIR}/config/homepage-{identity}.yaml`), fetches the JWT signing secret (Azure Key Vault on Windows, KWallet on Linux, macOS Keychain on Mac), mints a 30-day JWT, and opens the browser at `https://homepage.romaine.life/#token=<jwt>`. `frontend/auth.js` absorbs the fragment on load, stores the token in `localStorage['homepage_jwt']`, scrubs the URL, and hands it out as a Bearer header on cross-origin fetches to `fzt-frontend.romaine.life`. The cookie + `/auth/code` + `/auth/callback` exchange path was retired in the 2026-04-19 AKS migration — no `/homepage/*` mount on the shared API exists anymore.
