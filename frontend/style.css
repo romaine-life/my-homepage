@@ -71,6 +71,14 @@ body {
   /* Sit above the ambience canvas */
   position: relative;
   z-index: 1;
+  transition: opacity 700ms ease;
+}
+
+body.ambience-mode #app,
+body.ambience-mode #local-badge,
+body.ambience-mode #sync-indicator {
+  opacity: 0;
+  pointer-events: none;
 }
 
 #toolbar {

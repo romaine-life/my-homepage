@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, hidePalette as hideFzhPalette, setStatus as setFzhStatus, clearStatus as clearFzhStatus } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -23,6 +23,7 @@ let pendingBookmarks = null; // fresh bookmarks from background fetch, awaiting 
 let dragAllowed = false;
 let dragState = null;
 let callerSub = null; // cached JWT sub from whoami — used to build tree ids
+let ambienceMode = false;
 document.addEventListener("mouseup", () => { dragAllowed = false; });
 
 async function bookmarksTreeId() {
@@ -92,6 +93,7 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
 (async function main() {
   const fzhReady = initFzhTerminal(fzhTerminal);
+  fzhReady.then(() => registerFzhPublicCommands());
 
   tree.classList.add("hidden");
   setTerminalActive(true);
@@ -108,6 +110,8 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       triggerManualSync();
     } else if (action === "edit") {
       enterEditMode();
+    } else if (action === "ambience-mode") {
+      enterAmbienceMode();
     } else if (action === "logout") {
       logout();
     } else if (action === "copy-yaml") {
@@ -187,9 +191,6 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     // Playground mode — no auth, local-only bookmarks
     userAuthenticated = false;
     playgroundMode = true;
-    // Suppress the `:` palette root row. The commands it would hold (edit,
-    // logout, etc.) operate on a user session that doesn't exist here.
-    fzhReady.then(() => hideFzhPalette());
     const saved = loadPlaygroundBookmarks();
     currentBookmarks = (saved && saved.length > 0) ? saved : deepClone(SAMPLE_BOOKMARKS);
     savePlaygroundBookmarks(currentBookmarks);
@@ -1242,6 +1243,24 @@ function exitEditMode() {
   showTerminal();
 }
 
+// ── Ambience mode ───────────────────────────────────────────────
+
+function enterAmbienceMode() {
+  if (ambienceMode || editMode) return;
+  ambienceMode = true;
+  document.body.classList.add("ambience-mode");
+  setTerminalActive(false);
+  fzhTerminal.blur();
+}
+
+function exitAmbienceMode() {
+  if (!ambienceMode) return;
+  ambienceMode = false;
+  document.body.classList.remove("ambience-mode");
+  setTerminalActive(true);
+  fzhTerminal.focus();
+}
+
 function cleanBookmarks(items) {
   return items
     .filter((item) => (item.name && item.name.trim()) || item.ref || item._ref)
@@ -1364,6 +1383,13 @@ function yamlToBookmarks(text) {
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select")) return;
+  if (ambienceMode) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      exitAmbienceMode();
+    }
+    return;
+  }
   if (e.shiftKey && e.key === "Enter" && editMode) { e.preventDefault(); saveEdits(); return; }
 });
 
