@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus, enterPromptMode as enterFzhPromptMode } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -65,6 +65,14 @@ function openBookmarkUrl(url, options = {}) {
   }
 }
 
+function openGoogleSearch(query) {
+  window.location.href = "https://www.google.com/search?q=" + encodeURIComponent(query);
+}
+
+function enterGoogleSearchMode() {
+  enterFzhPromptMode("google", "google-search", "G", "search Google\u2026");
+}
+
 const SAMPLE_BOOKMARKS = [
   {
     name: "Getting Started",
@@ -100,7 +108,12 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
   // Wire up fzt action callback
   onTerminalAction(async (action, url, event) => {
-    if (action.startsWith("select:") && url) {
+    if (action.startsWith("prompt:google-search:")) {
+      const query = action.slice("prompt:google-search:".length).trim();
+      if (query) openGoogleSearch(query);
+    } else if (action.startsWith("select:") && url === "homepage:search") {
+      enterGoogleSearchMode();
+    } else if (action.startsWith("select:") && url) {
       const keyboardEnter = event && event.source === "keyboard" && event.key === "Enter";
       openBookmarkUrl(url, {
         newTab: keyboardEnter && event.ctrlKey,
