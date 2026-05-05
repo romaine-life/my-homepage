@@ -8,6 +8,10 @@ import { CONFIG } from './config.js';
 let _term = null;
 let _onAction = null;
 
+const TERMINAL_BOOKMARKS = [
+  { name: "search", description: "Google search", url: "homepage:search" },
+];
+
 // ── Bookmarks → YAML serializer (for fzt WASM loading) ────────
 // NOTE: This copy does NOT handle ref nodes (_ref, ref) — it only
 // sees fully resolved bookmarks. The script.js copy handles ref
@@ -95,11 +99,14 @@ export function loadBookmarks(bookmarks) {
   if (!_term || !_term.isReady()) return;
   if (!bookmarks) return;
   if (!Array.isArray(bookmarks)) bookmarks = [];
-  if (bookmarks.length === 0) return;
 
-  const yaml = bookmarksToYaml(bookmarks);
+  const yaml = bookmarksToYaml(TERMINAL_BOOKMARKS.concat(bookmarks));
   if (!_term.loadYAML(yaml)) return;
   _term.init();
+}
+
+export function enterPromptMode(mode, action, icon = "", placeholder = "") {
+  if (_term && _term.isReady()) _term.enterPromptMode(mode, action, icon, placeholder);
 }
 
 export function setEditMode(val) {
