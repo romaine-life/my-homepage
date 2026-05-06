@@ -11,4 +11,4 @@ resources:
 images:
 - name: romainecr.azurecr.io/my-homepage
   newName: romainecr.azurecr.io/my-homepage
-  newTag: 34e5b0a
+  newTag: cc0e090
