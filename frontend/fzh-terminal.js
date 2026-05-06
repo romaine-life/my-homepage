@@ -58,6 +58,7 @@ export function registerCommands() {
   if (!_term || !_term.isReady()) return;
   _term.addCommands([
     { name: "ambience mode", description: "Hide homepage and show ambience", action: "ambience-mode" },
+    { name: "settings ambience background", description: "Toggle ambience background on load", action: "toggle-ambience-background" },
     { name: "sync", description: "Check cloud for new bookmarks", action: "refresh" },
     { name: "edit", description: "Edit bookmark tree", action: "edit" },
     { name: "logout", description: "Log out", action: "logout" },
@@ -70,6 +71,7 @@ export function registerPublicCommands() {
   if (!_term || !_term.isReady()) return;
   _term.addCommands([
     { name: "ambience mode", description: "Hide homepage and show ambience", action: "ambience-mode" },
+    { name: "settings ambience background", description: "Toggle ambience background on load", action: "toggle-ambience-background" },
   ]);
 }
 

@@ -9,6 +9,17 @@
 </head>
 <body>
   <canvas id="ambience-canvas" data-ambience></canvas>
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem("homepage_ambience_background") !== "off") return;
+        document.documentElement.classList.add("ambience-disabled");
+        document.getElementById("ambience-canvas").removeAttribute("data-ambience");
+      } catch (_) {
+        // If storage is unavailable, keep the default ambience behavior.
+      }
+    })();
+  </script>
   <div id="app">
     <div id="toolbar">
       <button id="save-btn" class="hidden">Save</button>

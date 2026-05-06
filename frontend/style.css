@@ -63,6 +63,10 @@ body {
   pointer-events: none;
 }
 
+html.ambience-disabled #ambience-canvas {
+  display: none;
+}
+
 #app {
   display: flex;
   flex-direction: column;
