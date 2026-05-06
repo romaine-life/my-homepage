@@ -9,8 +9,14 @@ on:
       - Dockerfile
       - .dockerignore
       - k8s/**
+      - scripts/image-fingerprint.sh
       - .github/workflows/build-and-deploy.yml
   workflow_dispatch:
+    inputs:
+      git_ref:
+        description: "Git ref or commit SHA to build. Leave blank to build the dispatch revision."
+        required: false
+        type: string
 
 permissions:
   id-token: write
@@ -24,14 +30,40 @@ jobs:
   build-and-deploy:
     name: Build image, push, bump kustomization tag
     runs-on: ubuntu-latest
+    env:
+      REGISTRY: romainecr.azurecr.io
+      IMAGE: my-homepage
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Resolve requested ref
+        env:
+          INPUT_REF: ${{ inputs.git_ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags origin '+refs/heads/*:refs/remotes/origin/*'
+
+          target_ref="${INPUT_REF:-$GITHUB_SHA}"
+          if full_sha="$(git rev-parse --verify "${target_ref}^{commit}" 2>/dev/null)"; then
+            :
+          elif git show-ref --verify --quiet "refs/remotes/origin/${target_ref}"; then
+            full_sha="$(git rev-parse "refs/remotes/origin/${target_ref}^{commit}")"
+          elif git show-ref --verify --quiet "refs/tags/${target_ref}"; then
+            full_sha="$(git rev-parse "refs/tags/${target_ref}^{commit}")"
+          else
+            echo "::error::Unable to resolve git_ref '${target_ref}' to a commit."
+            exit 1
+          fi
+
+          git checkout --detach "$full_sha"
+          echo "Resolved ${target_ref} -> ${full_sha}"
+
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.ARM_CLIENT_ID }}
           tenant-id: ${{ vars.ARM_TENANT_ID }}
@@ -56,8 +88,15 @@ jobs:
           FZT_VERSION=$(gh release view --repo nelsong6/fzt-browser --json tagName -q '.tagName')
           echo "fzt_version=$FZT_VERSION" >> $GITHUB_OUTPUT
           printf '{"fztBrowser":"%s","sha":"%s","deployedAt":"%s"}\n' \
-            "$FZT_VERSION" "${GITHUB_SHA::7}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            "$FZT_VERSION" "$(git rev-parse --short=7 HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             > frontend/version.json
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          TAG="$(git rev-parse --short=7 HEAD)"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "Built ref $(git rev-parse HEAD) as ${REGISTRY}/${IMAGE}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compute next homepage version
         id: homepage-version
@@ -89,24 +128,87 @@ jobs:
       - name: ACR login
         run: az acr login --name romainecr
 
-      - name: Build and push image
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image fingerprint
+        id: fingerprint
+        shell: bash
         run: |
-          TAG="${GITHUB_SHA::7}"
-          IMAGE="romainecr.azurecr.io/my-homepage:${TAG}"
-          docker build -t "$IMAGE" .
-          docker push "$IMAGE"
-          echo "TAG=${TAG}" >> $GITHUB_ENV
+          set -euo pipefail
+          fingerprint="$(scripts/image-fingerprint.sh \
+            --image app \
+            --dockerfile Dockerfile \
+            --context . \
+            --paths 'Dockerfile .dockerignore backend/package.json backend/package-lock.json backend/server.js frontend/PerfectDOSVGA437.ttf frontend/SymbolsNerdFontMono-Regular.ttf frontend/ambience-client.js frontend/ambience-sim.js frontend/auth.js frontend/bookmarks-baked.json frontend/config.js frontend/favicon.ico frontend/fzh-terminal.js frontend/fzt-terminal.css frontend/fzt-terminal.js frontend/fzt-web.js frontend/fzt.wasm frontend/generate-config.sh frontend/index.html frontend/package.json frontend/package-lock.json frontend/script.js frontend/style.css frontend/sw.js frontend/version.json frontend/wasm_exec.js scripts/image-fingerprint.sh' \
+            | tee /tmp/my-homepage-image-fingerprint.txt \
+            | awk -F= '$1 == "fingerprint" { print $2 }')"
+          echo "ALIAS_TAG=app-${fingerprint}" >> "$GITHUB_ENV"
+
+      - name: Check existing image aliases
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if az acr repository show-tags \
+              --name romainecr \
+              --repository "${IMAGE}" \
+              --query "[?@=='${TAG}'] | [0]" \
+              --output tsv | grep -qx "${TAG}"; then
+            echo "target_exists=true" >>"${GITHUB_OUTPUT}"
+          else
+            echo "target_exists=false" >>"${GITHUB_OUTPUT}"
+          fi
+
+          if az acr repository show-tags \
+              --name romainecr \
+              --repository "${IMAGE}" \
+              --query "[?@=='${ALIAS_TAG}'] | [0]" \
+              --output tsv | grep -qx "${ALIAS_TAG}"; then
+            echo "alias_exists=true" >>"${GITHUB_OUTPUT}"
+            echo "Found reusable image ${REGISTRY}/${IMAGE}:${ALIAS_TAG}"
+          else
+            echo "alias_exists=false" >>"${GITHUB_OUTPUT}"
+            echo "No reusable image found for app fingerprint ${{ steps.fingerprint.outputs.fingerprint }}"
+          fi
+
+      - name: Retag existing fingerprint image
+        if: steps.image.outputs.target_exists != 'true' && steps.image.outputs.alias_exists == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr import \
+            --name romainecr \
+            --source "${REGISTRY}/${IMAGE}:${ALIAS_TAG}" \
+            --image "${IMAGE}:${TAG}" \
+            --force
+
+      - name: Build and push image
+        if: steps.image.outputs.target_exists != 'true' && steps.image.outputs.alias_exists != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.ALIAS_TAG }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE }}-build-cache:app
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE }}-build-cache:app,mode=max
 
       - name: Install kustomize
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           KUSTOMIZE_VERSION=v5.8.1
           curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin/
 
       - name: Bump image tag in k8s/kustomization.yaml
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: k8s
         run: kustomize edit set image romainecr.azurecr.io/my-homepage=romainecr.azurecr.io/my-homepage:${{ env.TAG }}
 
       - name: Commit and push tag bump
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -119,6 +221,7 @@ jobs:
           git push
 
       - name: Create release tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.homepage-version.outputs.version }}
