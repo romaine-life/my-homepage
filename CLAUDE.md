@@ -6,7 +6,7 @@ Bookmark manager web app hosted at homepage.romaine.life.
 
 Agent pods are not expected to have Docker. Do not report missing local Docker
 as a blocker. Run available repo checks first, then use PR CI as the normal
-container build gate: `.github/workflows/docker-build-check.yml` performs a
+container build gate: `.github/workflows/docker-build-check.yaml` performs a
 throwaway Docker build with `push: false`. If image-packaging feedback is
 needed before a PR is ready, manually dispatch that workflow with `git_ref`.
 Release/deploy workflows are the only path that publishes images.
@@ -141,7 +141,7 @@ Blob filenames match: `nelson.yaml`, `nelson-ea.yaml`, `nelson-r1.yaml`. Legacy 
 
 ## fzt Deploy Pipeline
 
-The deploy workflow (`build-and-deploy.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser GitHub release at deploy time — none committed to git. Triggered by pushes under `frontend/**`, `backend/**`, the Dockerfile, or `k8s/**`, or manually via `workflow_dispatch`. A new fzt-browser release does not auto-redeploy here — retrigger manually (`gh workflow run build-and-deploy.yml -R nelsong6/my-homepage`) when you want the latest fzt assets.
+The deploy workflow (`build-and-deploy.yaml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser GitHub release at deploy time — none committed to git. Triggered by pushes under `frontend/**`, `backend/**`, the Dockerfile, or `k8s/**`, or manually via `workflow_dispatch`. A new fzt-browser release does not auto-redeploy here — retrigger manually (`gh workflow run build-and-deploy.yaml -R nelsong6/my-homepage`) when you want the latest fzt assets.
 
 The build writes `frontend/version.json` (containing the fzt-browser release version used) so the CI dashboard can see which version is live.
 
