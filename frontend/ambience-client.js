@@ -7,7 +7,8 @@
 //   <script src="https://ambience.romaine.life/client.js"></script>
 //
 // and get a rain (or future effect) overlay plus live entropy contribution
-// to the shared atmosphere. No per-consumer JS required.
+// to the shared atmosphere. client.js loads the Go/WASM runtime itself; no
+// per-consumer JS required.
 //
 // Configuration, via attributes on the <canvas>:
 //   data-ambience-url="https://ambience.romaine.life"   — server override
@@ -20,7 +21,8 @@
 //
 // Effect agnostic: the server's snapshot broadcasts the effect type; this
 // file looks it up in AmbienceSim.effects[type]. Adding a new effect means
-// registering a new entry in sim.js — no change needed here.
+// registering a Go-backed constructor through wasm_runtime.js — no change
+// needed here.
 
 (function () {
 	'use strict';
@@ -60,22 +62,37 @@
 			const drift = target - current;
 			if (drift <= 0) return 0;
 			if (drift > hardCatchupDrift) return maxCatchupSteps;
-			if (drift > softCatchupDrift) return Math.min(maxCatchupSteps, 2);
+			if (drift > 1) return Math.min(maxCatchupSteps, 2);
 			return 1;
 		}
 
-		function debugState(currentTick, queuedCommands) {
+		function debugState(currentTick, queueInfo) {
 			const current = Number.isFinite(currentTick) ? currentTick : 0;
 			const authorityTick = estimatedAuthorityTick(current);
 			const playbackTick = targetPlaybackTick(current);
+			const queuedCommands = typeof queueInfo === 'number'
+				? queueInfo
+				: (queueInfo && Number.isFinite(queueInfo.queuedCommands) ? queueInfo.queuedCommands : 0);
+			const nextQueuedCommandTick = queueInfo && Number.isFinite(queueInfo.nextQueuedCommandTick)
+				? queueInfo.nextQueuedCommandTick
+				: null;
+			const maxQueuedCommandTick = queueInfo && Number.isFinite(queueInfo.maxQueuedCommandTick)
+				? queueInfo.maxQueuedCommandTick
+				: null;
+			const bufferedAheadTicks = maxQueuedCommandTick === null
+				? 0
+				: Math.max(0, maxQueuedCommandTick - playbackTick);
 			return {
 				authorityTick,
 				playbackTick,
 				simTick: current,
 				driftTicks: playbackTick - current,
 				delayTicks,
+				bufferedAheadTicks,
 				tickMs,
-				queuedCommands: queuedCommands || 0,
+				queuedCommands,
+				nextQueuedCommandTick,
+				maxQueuedCommandTick,
 				haveAuthoritySample,
 			};
 		}
@@ -84,6 +101,17 @@
 	}
 
 	window.AmbienceClientClock = window.AmbienceClientClock || { createPlaybackClock };
+
+	function loadScript(src) {
+		return new Promise((resolve, reject) => {
+			const el = document.createElement('script');
+			el.src = src;
+			el.async = true;
+			el.onload = resolve;
+			el.onerror = () => reject(new Error('failed to load ' + src));
+			document.head.appendChild(el);
+		});
+	}
 
 	const canvas = document.querySelector('canvas[data-ambience]');
 	if (!canvas) {
@@ -113,6 +141,8 @@
 	const HARD_CATCHUP_DRIFT = 100;
 
 	const ctx = canvas.getContext('2d');
+	if (canvas.style) canvas.style.imageRendering = canvas.style.imageRendering || 'pixelated';
+	ctx.imageSmoothingEnabled = false;
 	let initialFadeCover = null;
 
 	// Mark body so consumer CSS can conditionally adapt (e.g. make terminal
@@ -135,6 +165,14 @@
 	let ready = false;
 	let initialFadePending = false;
 	let initialFadeStarted = false;
+	let lastError = null;
+	const sceneState = {
+		currentName: null,
+		nextName: null,
+		sceneRemaining: null,
+		durationTicks: null,
+		startedAtTick: null,
+	};
 	const pendingCommands = [];
 	const clock = createPlaybackClock({
 		tickMs: TICK_MS,
@@ -200,6 +238,37 @@
 		return Number.isFinite(s.tick) ? s.tick : 0;
 	}
 
+	function getSimDebug(s) {
+		if (!s) return null;
+		if (s.isTransition && s.incoming) return getSimDebug(s.incoming);
+		if (typeof s.getDebugState === 'function') return s.getDebugState();
+		return null;
+	}
+
+	function updateSceneFromSnapshot(data) {
+		if (!data) return;
+		if (data.currentScene) {
+			sceneState.currentName = data.currentScene.name || sceneState.currentName;
+			sceneState.durationTicks = Number.isFinite(data.currentScene.durationTicks)
+				? data.currentScene.durationTicks
+				: sceneState.durationTicks;
+			sceneState.startedAtTick = Number.isFinite(data.currentScene.startedAtTick)
+				? data.currentScene.startedAtTick
+				: sceneState.startedAtTick;
+		}
+		if (data.nextScene) sceneState.nextName = data.nextScene.name || sceneState.nextName;
+		if (Number.isFinite(data.sceneRemaining)) sceneState.sceneRemaining = data.sceneRemaining;
+	}
+
+	function applySceneData(data) {
+		if (!data) return;
+		sceneState.currentName = data.name || data.currentName || sceneState.currentName;
+		sceneState.nextName = data.nextName || sceneState.nextName;
+		sceneState.durationTicks = Number.isFinite(data.durationTicks) ? data.durationTicks : sceneState.durationTicks;
+		sceneState.startedAtTick = Number.isFinite(data.startedAtTick) ? data.startedAtTick : sceneState.startedAtTick;
+		if (Number.isFinite(data.sceneRemaining)) sceneState.sceneRemaining = data.sceneRemaining;
+	}
+
 	function stepTowardAuthorityClock() {
 		const current = getSimTick(sim);
 		const steps = clock.stepsFor(current);
@@ -223,6 +292,22 @@
 		});
 	}
 
+	function commandQueueTelemetry() {
+		let nextQueuedCommandTick = null;
+		let maxQueuedCommandTick = null;
+		for (const item of pendingCommands) {
+			const tick = Number.isFinite(item.cmd.tick) ? item.cmd.tick : null;
+			if (tick === null) continue;
+			if (nextQueuedCommandTick === null || tick < nextQueuedCommandTick) nextQueuedCommandTick = tick;
+			if (maxQueuedCommandTick === null || tick > maxQueuedCommandTick) maxQueuedCommandTick = tick;
+		}
+		return {
+			queuedCommands: pendingCommands.length,
+			nextQueuedCommandTick,
+			maxQueuedCommandTick,
+		};
+	}
+
 	function applyDueCommands(playbackTick) {
 		while (pendingCommands.length > 0) {
 			const item = pendingCommands[0];
@@ -239,9 +324,11 @@
 				const newType = (data && data.type) || 'rain';
 				const ctor = AmbienceSim.effects[newType];
 				if (!ctor) {
+					lastError = `unknown effect type: ${newType}`;
 					console.warn('ambience-client: unknown effect type', newType);
 					break;
 				}
+				lastError = null;
 				if (!sim) {
 					sim = new ctor(GRID_W, GRID_H, {});
 					try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
@@ -257,7 +344,14 @@
 				} else {
 					try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
 				}
+				updateSceneFromSnapshot(data);
 				ready = true;
+				if (Number.isFinite(data && data.tick)) {
+					for (let i = pendingCommands.length - 1; i >= 0; i--) {
+						const queuedTick = Number.isFinite(pendingCommands[i].cmd.tick) ? pendingCommands[i].cmd.tick : data.tick;
+						if (queuedTick <= data.tick) pendingCommands.splice(i, 1);
+					}
+				}
 				break;
 			}
 			case 'config':
@@ -267,67 +361,86 @@
 			case 'trigger':
 				if (sim && sim.triggerEvent) sim.triggerEvent(cmd.event);
 				break;
+			case 'scene':
+			case 'metric':
+				applySceneData(data);
+				break;
 		}
 	}
 
-	// Patch the subscribe snapshot handler so we can detect effect-type
-	// changes (for when more effects ship). The shared subscribe() swaps
-	// config on the existing sim; a type switch crossfades the outgoing
-	// effect into the incoming one via AmbienceSim.EffectTransition.
-	const es = new EventSource(SERVER.replace(/\/+$/, '') + '/events');
-	es.addEventListener('message', (e) => {
-		let cmd;
-		try { cmd = JSON.parse(e.data); } catch (_) { return; }
-		clock.noteAuthorityTick(cmd.tick);
-		const data = typeof cmd.data === 'string' ? JSON.parse(cmd.data) : cmd.data;
-		switch (cmd.kind) {
-			case 'snapshot':
-				if (!ready) {
-					applyCommandNow(cmd, data);
-				} else {
-					queueCommand(cmd, data);
-				}
-				break;
-			case 'metric':
-			case 'scene':
-			case 'clock':
-				break;
-			case 'config':
-			case 'trigger':
-				queueCommand(cmd, data);
-				break;
-		}
-	});
-
 	window.AmbienceClient = {
 		getDebugState: () => Object.assign(
-			{ effectType, ready, initialFadeStarted },
-			clock.debugState(getSimTick(sim), pendingCommands.length),
+			{
+				effectType,
+				ready,
+				initialFadeStarted,
+				scene: Object.assign({}, sceneState),
+				sim: getSimDebug(sim),
+				lastError,
+			},
+			clock.debugState(getSimTick(sim), commandQueueTelemetry()),
 		),
 	};
 
-	// Combined 10 Hz tick (matches server atmosphere rate). Step + render
-	// in one setInterval — rAF pauses in background tabs and we don't need
-	// 60 Hz for a 10 Hz sim.
-	setInterval(() => {
-		if (ready) stepTowardAuthorityClock();
-		// Unwrap a finished crossfade so we drop the outgoing sim and stop
-		// paying its render cost.
-		if (!sim) return;
-		if (sim.isTransition && sim.done()) sim = sim.incoming;
-		sim.render(ctx, canvas.width, canvas.height, { transparent: TRANSPARENT });
-		if (initialFadePending) {
-			initialFadePending = false;
-			revealInitialScene();
+	async function start() {
+		if (!AmbienceSim.wasm) {
+			await loadScript(SERVER.replace(/\/+$/, '') + '/wasm_runtime.js');
 		}
-	}, 100);
+		if (!AmbienceSim.wasm || !AmbienceSim.wasm.ready) {
+			throw new Error('ambience-client: Go WASM runtime missing');
+		}
+		await AmbienceSim.wasm.ready({
+			wasmExecURL: SERVER.replace(/\/+$/, '') + '/wasm_exec.js',
+			wasmURL: SERVER.replace(/\/+$/, '') + '/ambience.wasm',
+		});
 
-	// ── Entropy ──────────────────────────────────────────────────
-	// Every keystroke contributes a few bits derived from the key identity
-	// and its wall-clock timing. Batched and POSTed at a throttle so typing
-	// doesn't flood the server. The server folds bits into the shared
-	// atmosphere's RNG — see POST /entropy.
-	if (ENTROPY_ENABLED) {
+		// Patch the subscribe snapshot handler so we can detect effect-type
+		// changes. The shared subscribe() swaps config on the existing sim; a
+		// type switch crossfades the outgoing effect into the incoming one.
+		const es = new EventSource(SERVER.replace(/\/+$/, '') + '/events');
+		es.addEventListener('message', (e) => {
+			let cmd;
+			try { cmd = JSON.parse(e.data); } catch (_) { return; }
+			clock.noteAuthorityTick(cmd.tick);
+			const data = typeof cmd.data === 'string' ? JSON.parse(cmd.data) : cmd.data;
+			switch (cmd.kind) {
+				case 'snapshot':
+					applyCommandNow(cmd, data);
+					break;
+				case 'metric':
+				case 'scene':
+					applyCommandNow(cmd, data);
+					break;
+				case 'clock':
+					break;
+				case 'config':
+				case 'trigger':
+					queueCommand(cmd, data);
+					break;
+			}
+		});
+
+		// Combined 10 Hz tick (matches server atmosphere rate). Step + render
+		// in one setInterval — rAF pauses in background tabs and we don't need
+		// 60 Hz for a 10 Hz sim.
+		setInterval(() => {
+			if (ready) stepTowardAuthorityClock();
+			// Unwrap a finished crossfade so we drop the outgoing sim and stop
+			// paying its render cost.
+			if (!sim) return;
+			if (sim.isTransition && sim.done()) {
+				if (sim.outgoing && typeof sim.outgoing.destroy === 'function') sim.outgoing.destroy();
+				sim = sim.incoming;
+			}
+			sim.render(ctx, canvas.width, canvas.height, { transparent: TRANSPARENT });
+			if (initialFadePending) {
+				initialFadePending = false;
+				revealInitialScene();
+			}
+		}, 100);
+	}
+
+	function startEntropy() {
 		const buf = [];
 		const FLUSH_INTERVAL_MS = 2000;
 		const MAX_BUFFERED = 256;
@@ -354,4 +467,12 @@
 			} catch (_) { /* swallow */ }
 		}, FLUSH_INTERVAL_MS);
 	}
+
+	start()
+		.then(() => {
+			if (ENTROPY_ENABLED) startEntropy();
+		})
+		.catch((err) => {
+			console.error(err);
+		});
 })();
