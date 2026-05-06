@@ -10,6 +10,7 @@ const apiError = document.getElementById("api-error");
 
 const CACHE_KEY = "cached_bookmarks";
 const PLAYGROUND_KEY = "playground_bookmarks";
+const AMBIENCE_BACKGROUND_KEY = "homepage_ambience_background";
 
 // ── Edit mode state ─────────────────────────────────────────────
 let editMode = false;
@@ -125,6 +126,8 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       enterEditMode();
     } else if (action === "ambience-mode") {
       enterAmbienceMode();
+    } else if (action === "toggle-ambience-background") {
+      toggleAmbienceBackground();
     } else if (action === "logout") {
       logout();
     } else if (action === "copy-yaml") {
@@ -1272,6 +1275,28 @@ function exitAmbienceMode() {
   document.body.classList.remove("ambience-mode");
   setTerminalActive(true);
   fzhTerminal.focus();
+}
+
+function loadAmbienceBackgroundEnabled() {
+  try {
+    return localStorage.getItem(AMBIENCE_BACKGROUND_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function toggleAmbienceBackground() {
+  const enabled = !loadAmbienceBackgroundEnabled();
+  try {
+    if (enabled) localStorage.removeItem(AMBIENCE_BACKGROUND_KEY);
+    else localStorage.setItem(AMBIENCE_BACKGROUND_KEY, "off");
+  } catch {
+    setFzhStatus("Could not save ambience setting", 2);
+    return;
+  }
+
+  setFzhStatus(enabled ? "Ambience background on" : "Ambience background off", 1);
+  window.setTimeout(() => window.location.reload(), 250);
 }
 
 function cleanBookmarks(items) {
