@@ -125,7 +125,7 @@ jobs:
 
       - name: Build and push candidate image
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.candidate.outputs.hit != 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
@@ -140,7 +140,7 @@ jobs:
 
       - name: Build image without pushing
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
