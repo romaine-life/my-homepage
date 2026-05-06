@@ -185,7 +185,7 @@ jobs:
 
       - name: Build and push image
         if: steps.image.outputs.target_exists != 'true' && steps.image.outputs.alias_exists != 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
