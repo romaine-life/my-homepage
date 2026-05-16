@@ -23,7 +23,7 @@ spec:
       serviceAccountName: infra-shared
       containers:
         - name: my-homepage
-          image: romainecr.azurecr.io/my-homepage:placeholder
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
