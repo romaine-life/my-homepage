@@ -1,39 +1,11 @@
-// Browser auth lives at auth.romaine.life. Anonymous users can select a
-// homepage profile, sign in with Microsoft there, and return here with the
-// shared .romaine.life auth session. We then fetch an RS256 bearer JWT from
-// auth.romaine.life and hand it to fzt-frontend. The old #token= path is kept
-// as a compatibility fallback for terminal-minted tokens.
+// Client-side-only auth. The terminal (`at homepagelogin`) mints a JWT with
+// the shared api-jwt-signing-secret, then opens the browser at
+//   https://homepage.romaine.life/#token=<jwt>
+// This module absorbs the fragment on load, stashes the JWT in localStorage,
+// scrubs the URL, and hands it out as a Bearer header on API calls. No
+// cookie, no /auth/* endpoints — fzt-frontend.romaine.life only verifies.
 
-const LEGACY_STORAGE_KEY = 'homepage_jwt';
-const PROFILE_STORAGE_KEY = 'homepage_profile';
-const AUTH_BASE = 'https://auth.romaine.life';
-
-const PROFILES = {
-  personal: {
-    id: 'personal',
-    label: 'Personal',
-    treeSub: 'nelson',
-    description: 'Load personal bookmarks',
-  },
-  'engineered-arts': {
-    id: 'engineered-arts',
-    label: 'Engineered Arts',
-    treeSub: 'nelson-ea',
-    description: 'Load Engineered Arts bookmarks',
-  },
-};
-
-const PROFILE_ALIASES = {
-  personal: 'personal',
-  nelson: 'personal',
-  ea: 'engineered-arts',
-  engineered: 'engineered-arts',
-  'engineered-arts': 'engineered-arts',
-  engineeredarts: 'engineered-arts',
-  'nelson-ea': 'engineered-arts',
-};
-
-let cachedAuthToken = null;
+const STORAGE_KEY = 'homepage_jwt';
 
 // Baked-deploy mode — SWA bypass hostname (work-computer access where
 // *.romaine.life is blocked). Auth and API are inert; bookmarks are served
@@ -44,78 +16,21 @@ let cachedAuthToken = null;
 const IS_BAKED = typeof window !== 'undefined' &&
   window.location.hostname.endsWith('.azurestaticapps.net');
 
-// Absorb `#token=<jwt>` and `?profile=<id>` on module load (runs once per
-// page load). The profile param is used as the post-auth callback marker.
-(function absorbLoginState() {
-  try {
-    const url = new URL(window.location.href);
-    let dirty = false;
-
-    const tokenMatch = window.location.hash.match(/#token=([A-Za-z0-9_\-.]+)/);
-    if (tokenMatch) {
-      localStorage.setItem(LEGACY_STORAGE_KEY, tokenMatch[1]);
-      url.hash = '';
-      dirty = true;
-    }
-
-    const profile = normalizeProfileId(url.searchParams.get('profile'));
-    if (profile) {
-      localStorage.setItem(PROFILE_STORAGE_KEY, profile);
-      url.searchParams.delete('profile');
-      dirty = true;
-    }
-
-    if (dirty) {
-      history.replaceState(null, '', url.pathname + url.search + url.hash);
-    }
-  } catch {
-    // If storage or URL parsing is unavailable, leave auth state untouched.
+// Absorb `#token=<jwt>` on module load (runs once per page load).
+(function absorbTokenFragment() {
+  const match = window.location.hash.match(/#token=([A-Za-z0-9_\-.]+)/);
+  if (match) {
+    localStorage.setItem(STORAGE_KEY, match[1]);
+    history.replaceState(null, '', window.location.pathname + window.location.search);
   }
 })();
 
-function normalizeProfileId(value) {
-  if (!value) return null;
-  return PROFILE_ALIASES[String(value).trim().toLowerCase()] || null;
-}
-
-export function selectedProfile() {
-  let profileId = null;
-  try {
-    profileId = normalizeProfileId(localStorage.getItem(PROFILE_STORAGE_KEY));
-  } catch {
-    profileId = null;
-  }
-  return PROFILES[profileId || 'personal'];
-}
-
-export function profileLoginUrl(profileId) {
-  const profile = normalizeProfileId(profileId) || 'personal';
-  const callback = new URL(window.location.origin + window.location.pathname);
-  callback.searchParams.set('profile', profile);
-  return `${AUTH_BASE}/sign-in/microsoft?callbackURL=${encodeURIComponent(callback.toString())}`;
-}
-
-export function profileLoginBookmarks() {
-  return Object.values(PROFILES).map(profile => ({
-    name: profile.label.replace(/\s+/g, '-'),
-    url: profileLoginUrl(profile.id),
-    description: `${profile.description} via auth.romaine.life`,
-  }));
-}
-
 export function getToken() {
-  if (isJwtUsable(cachedAuthToken)) return cachedAuthToken;
-  cachedAuthToken = null;
-  try {
-    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-    return isJwtUsable(legacy) ? legacy : null;
-  } catch {
-    return null;
-  }
+  return localStorage.getItem(STORAGE_KEY);
 }
 
-export async function authHeader() {
-  const t = await getOrRefreshToken();
+export function authHeader() {
+  const t = getToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
@@ -127,45 +42,17 @@ function parseJwt(t) {
   }
 }
 
-function isJwtUsable(t) {
-  if (!t) return false;
-  const payload = parseJwt(t);
-  if (!payload) return false;
-  return !payload.exp || payload.exp > Math.floor(Date.now() / 1000) + 30;
-}
-
-async function fetchAuthToken() {
-  const res = await fetch(`${AUTH_BASE}/api/auth/token`, {
-    credentials: 'include',
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data && typeof data.token === 'string' ? data.token : null;
-}
-
-async function getOrRefreshToken() {
-  const current = getToken();
-  if (current) return current;
-
-  try {
-    const token = await fetchAuthToken();
-    if (!isJwtUsable(token)) return null;
-    cachedAuthToken = token;
-    return token;
-  } catch {
-    return null;
-  }
-}
-
 export async function checkAuth() {
   if (IS_BAKED) return true;
-  const t = await getOrRefreshToken();
-  if (!t) {
-    try {
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-    } catch {
-      // Ignore storage cleanup failures.
-    }
+  const t = getToken();
+  if (!t) return false;
+  const payload = parseJwt(t);
+  if (!payload) {
+    localStorage.removeItem(STORAGE_KEY);
+    return false;
+  }
+  if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+    localStorage.removeItem(STORAGE_KEY);
     return false;
   }
   return true;
@@ -173,36 +60,18 @@ export async function checkAuth() {
 
 export async function fetchWhoami() {
   if (IS_BAKED) return { sub: 'nelson-r1', name: 'r1', email: 'gromaine@r1rcm.com' };
-  const t = await getOrRefreshToken();
+  const t = getToken();
   if (!t) return null;
   const payload = parseJwt(t);
   if (!payload) return null;
-  const profile = selectedProfile();
   return {
-    sub: profile.treeSub,
-    name: profile.label,
+    sub: payload.sub,
+    name: payload.name || null,
     email: payload.email || payload.sub,
-    authSub: payload.sub,
-    profile: profile.id,
   };
 }
 
-export async function logout() {
-  cachedAuthToken = null;
-  try {
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-  } catch {
-    // Ignore storage cleanup failures.
-  }
-
-  try {
-    await fetch(`${AUTH_BASE}/api/auth/sign-out`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-  } catch {
-    // Local logout still matters if the network is unavailable.
-  }
-
+export function logout() {
+  localStorage.removeItem(STORAGE_KEY);
   window.location.reload();
 }

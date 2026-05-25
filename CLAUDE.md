@@ -13,17 +13,11 @@ Release/deploy workflows are the only path that publishes images.
 
 ## Auth
 
-Browser login goes through `auth.romaine.life`. Anonymous users see a `Login`
-folder with `Personal` and `Engineered-Arts` entries. Each entry redirects to
-`https://auth.romaine.life/sign-in/microsoft` with a homepage callback carrying
-`?profile=<id>`. On return, `frontend/auth.js` stores the selected profile,
-fetches an RS256 bearer from `https://auth.romaine.life/api/auth/token` using
-the shared `.romaine.life` session cookie, and sends that bearer to
-`fzt-frontend.romaine.life`.
+Terminal-minted JWTs — no browser-side auth UI. The PowerShell `login` function (profile-1) calls `romaine-api.py login`, which reads a profile-specific identity config (`${PROFILE_DIR}/config/homepage-{identity}.yaml`), fetches the JWT signing secret (Azure Key Vault on Windows, KWallet on Linux, macOS Keychain on Mac), mints a 30-day JWT, and opens the browser at `https://homepage.romaine.life/#token=<jwt>`. `frontend/auth.js` absorbs the fragment on load, stores the token in `localStorage['homepage_jwt']`, scrubs the URL, and hands it out as a Bearer header on cross-origin fetches to `fzt-frontend.romaine.life`. The cookie + `/auth/code` + `/auth/callback` exchange path was retired in the 2026-04-19 AKS migration — no `/homepage/*` mount on the shared API exists anymore.
 
-- **Active profiles**: `personal` loads `nelson-bookmarks`; `engineered-arts` loads `nelson-ea-bookmarks`.
-- **JWT verification**: `fzt-frontend` verifies browser JWTs against `https://auth.romaine.life/api/auth/jwks`. The old `#token=` terminal-minted HS256 path remains as a compatibility fallback, not the primary browser flow.
-- **Unauthenticated fallback** — if no auth.romaine.life session exists, the app shows playground mode with sample bookmarks and login entries.
+- **Three identities**: `nelson` (personal, all profiles), `nelson-ea` (Engineered Arts, profile 2), `nelson-r1` (R1, profile 3). Each gets separate bookmark sets. The profile config YAML determines which identity to use.
+- **JWT claims**: `{ sub, email, name, role, iat, exp }` — signed with `api-jwt-signing-secret` from Key Vault. The API's `requireAuth` middleware verifies the signature and extracts `sub` for user identification.
+- **No browser auth fallback** — if the token is missing or expired, the app shows playground mode with sample bookmarks.
 - **Local dev port 3001** — the frontend dev server runs on port 3001 (`npx serve`). The shared API runs on port 3000.
 
 ## fzt Terminal Integration
