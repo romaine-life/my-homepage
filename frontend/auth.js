@@ -133,7 +133,22 @@ export async function fetchWhoami() {
   };
 }
 
-export async function logout() {
+function submitLogoutForm(callback) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = `${AUTH_BASE}/sign-out`;
+
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'callbackURL';
+  input.value = callback;
+  form.appendChild(input);
+
+  document.body.appendChild(form);
+  form.submit();
+}
+
+export function logout() {
   cachedAuthToken = null;
   try {
     localStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -141,14 +156,6 @@ export async function logout() {
     // Ignore storage cleanup failures.
   }
 
-  try {
-    await fetch(`${AUTH_BASE}/api/auth/sign-out`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-  } catch {
-    // Local logout still matters if the network is unavailable.
-  }
-
-  window.location.reload();
+  const callback = window.location.origin + window.location.pathname;
+  submitLogoutForm(callback);
 }
