@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
+import { logout, checkAuth, fetchWhoami, authHeader, loginBookmark } from './auth.js';
 import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus, enterPromptMode as enterFzhPromptMode } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
@@ -75,6 +75,7 @@ function enterGoogleSearchMode() {
 }
 
 const SAMPLE_BOOKMARKS = [
+  loginBookmark(),
   {
     name: "Getting Started",
     children: [
@@ -91,6 +92,21 @@ const SAMPLE_BOOKMARKS = [
     ],
   },
 ];
+
+function isHomepageLoginNode(item) {
+  if (!item || item.name !== "Login") return false;
+  if (item.url && item.url.includes("auth.romaine.life/sign-in/")) return true;
+  return Array.isArray(item.children) &&
+    item.children.some(child => child?.url && child.url.includes("auth.romaine.life/sign-in/"));
+}
+
+function ensureLoginBookmark(bookmarks) {
+  const source = Array.isArray(bookmarks) ? bookmarks : [];
+  return [
+    loginBookmark(),
+    ...source.filter(item => !isHomepageLoginNode(item)),
+  ];
+}
 
 // ── Local dev indicator ──────────────────────────────────────────
 
@@ -208,7 +224,8 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     userAuthenticated = false;
     playgroundMode = true;
     const saved = loadPlaygroundBookmarks();
-    currentBookmarks = (saved && saved.length > 0) ? saved : deepClone(SAMPLE_BOOKMARKS);
+    const playgroundBookmarks = (saved && saved.length > 0) ? saved : deepClone(SAMPLE_BOOKMARKS);
+    currentBookmarks = ensureLoginBookmark(playgroundBookmarks);
     savePlaygroundBookmarks(currentBookmarks);
     renderBookmarks(currentBookmarks);
     fzhReady.then(() => loadFzhBookmarks(currentBookmarks));
@@ -452,11 +469,11 @@ async function fetchBookmarks() {
   try {
     const treeId = await bookmarksTreeId();
     const url = `${CONFIG.fztApiBase}/fzt/tree/${treeId}`;
-    let res = await fetch(url, { headers: { ...authHeader() } });
+    let res = await fetch(url, { headers: await authHeader() });
 
     if (res.status === 503) {
       await ensureBackendReady();
-      res = await fetch(url, { headers: { ...authHeader() } });
+      res = await fetch(url, { headers: await authHeader() });
     }
 
     if (res.status === 401) {
@@ -490,7 +507,7 @@ async function putBookmarks(bookmarks) {
     tree: bookmarks,
     baseVersion: lastFetchedVersion,
   };
-  const putHeaders = { "Content-Type": "application/json", ...authHeader() };
+  const putHeaders = { "Content-Type": "application/json", ...(await authHeader()) };
 
   let res = await fetch(url, {
     method: "PUT",
