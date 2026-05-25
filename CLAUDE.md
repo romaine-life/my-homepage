@@ -13,18 +13,13 @@ Release/deploy workflows are the only path that publishes images.
 
 ## Auth
 
-Browser login goes through `auth.romaine.life`. Anonymous users see a `Login`
-folder with `Personal` and `Engineered-Arts` entries. Each entry redirects to
-`https://auth.romaine.life/sign-in/microsoft` with a homepage callback carrying
-`?profile=<id>`. On return, `frontend/auth.js` stores the selected profile,
-fetches an RS256 bearer from `https://auth.romaine.life/api/auth/token` using
-the shared `.romaine.life` session cookie, and sends that bearer to
-`fzt-frontend.romaine.life`.
+Browser auth is handled by `auth.romaine.life`. Anonymous users see the normal playground tree with one `Login` leaf that opens `https://auth.romaine.life/sign-in/microsoft?callbackURL=<homepage>`. After the auth redirect returns to homepage, `frontend/auth.js` calls `https://auth.romaine.life/api/auth/token` with `credentials: include` and uses the returned JWT as the Bearer token for `fzt-frontend.romaine.life`.
 
-- **Active profiles**: `personal` loads `nelson-bookmarks`; `engineered-arts` loads `nelson-ea-bookmarks`.
-- **JWT verification**: `fzt-frontend` verifies browser JWTs against `https://auth.romaine.life/api/auth/jwks`. The old `#token=` terminal-minted HS256 path remains as a compatibility fallback, not the primary browser flow.
-- **Unauthenticated fallback** — if no auth.romaine.life session exists, the app shows playground mode with sample bookmarks and login entries.
-- **Local dev port 3001** — the frontend dev server runs on port 3001 (`npx serve`). The shared API runs on port 3000.
+- **Active bookmark profiles**: personal maps to `nelson-bookmarks`; Engineered Arts maps to `nelson-ea-bookmarks`. The UI does not let the visitor choose a profile. The logged-in auth user determines the bookmark tree.
+- **User mapping**: legacy clean `sub` values (`nelson`, `nelson-ea`, `nelson-r1`) are honored directly. Auth users with `email === n.romaine@engineeredarts.com` or an `@engineeredarts.com` address map to `nelson-ea`; other browser-auth users map to `nelson`.
+- **Legacy token fallback**: `#token=<jwt>` is still absorbed into `localStorage['homepage_jwt']` for terminal-minted tokens, then scrubbed from the URL. This is compatibility only; the unauthenticated homepage path should use browser login.
+- **JWT claims**: `{ sub, email, name, role, iat, exp }`. The API's `requireAuth` middleware verifies the token and extracts identity for authorization; homepage maps the auth identity to the bookmark tree id client-side.
+- **Local dev port 3001**: the frontend dev server runs on port 3001 (`npx serve`). The shared API runs on port 3000.
 
 ## fzt Terminal Integration
 

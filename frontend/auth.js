@@ -1,37 +1,13 @@
-// Browser auth lives at auth.romaine.life. Anonymous users can select a
-// homepage profile, sign in with Microsoft there, and return here with the
-// shared .romaine.life auth session. We then fetch an RS256 bearer JWT from
-// auth.romaine.life and hand it to fzt-frontend. The old #token= path is kept
-// as a compatibility fallback for terminal-minted tokens.
+// Browser auth lives at auth.romaine.life. Anonymous users get one login
+// option; after sign-in the returned auth user determines which bookmark tree
+// loads. The old #token= path remains as a compatibility fallback for
+// terminal-minted tokens.
 
 const LEGACY_STORAGE_KEY = 'homepage_jwt';
-const PROFILE_STORAGE_KEY = 'homepage_profile';
 const AUTH_BASE = 'https://auth.romaine.life';
-
-const PROFILES = {
-  personal: {
-    id: 'personal',
-    label: 'Personal',
-    treeSub: 'nelson',
-    description: 'Load personal bookmarks',
-  },
-  'engineered-arts': {
-    id: 'engineered-arts',
-    label: 'Engineered Arts',
-    treeSub: 'nelson-ea',
-    description: 'Load Engineered Arts bookmarks',
-  },
-};
-
-const PROFILE_ALIASES = {
-  personal: 'personal',
-  nelson: 'personal',
-  ea: 'engineered-arts',
-  engineered: 'engineered-arts',
-  'engineered-arts': 'engineered-arts',
-  engineeredarts: 'engineered-arts',
-  'nelson-ea': 'engineered-arts',
-};
+const ENGINEERED_ARTS_EMAIL = 'n.romaine@engineeredarts.com';
+const ENGINEERED_ARTS_DOMAIN = '@engineeredarts.com';
+const LEGACY_BOOKMARK_SUBS = new Set(['nelson', 'nelson-ea', 'nelson-r1']);
 
 let cachedAuthToken = null;
 
@@ -44,63 +20,22 @@ let cachedAuthToken = null;
 const IS_BAKED = typeof window !== 'undefined' &&
   window.location.hostname.endsWith('.azurestaticapps.net');
 
-// Absorb `#token=<jwt>` and `?profile=<id>` on module load (runs once per
-// page load). The profile param is used as the post-auth callback marker.
-(function absorbLoginState() {
-  try {
-    const url = new URL(window.location.href);
-    let dirty = false;
-
-    const tokenMatch = window.location.hash.match(/#token=([A-Za-z0-9_\-.]+)/);
-    if (tokenMatch) {
-      localStorage.setItem(LEGACY_STORAGE_KEY, tokenMatch[1]);
-      url.hash = '';
-      dirty = true;
-    }
-
-    const profile = normalizeProfileId(url.searchParams.get('profile'));
-    if (profile) {
-      localStorage.setItem(PROFILE_STORAGE_KEY, profile);
-      url.searchParams.delete('profile');
-      dirty = true;
-    }
-
-    if (dirty) {
-      history.replaceState(null, '', url.pathname + url.search + url.hash);
-    }
-  } catch {
-    // If storage or URL parsing is unavailable, leave auth state untouched.
+// Absorb `#token=<jwt>` on module load (runs once per page load).
+(function absorbTokenFragment() {
+  const match = window.location.hash.match(/#token=([A-Za-z0-9_\-.]+)/);
+  if (match) {
+    localStorage.setItem(LEGACY_STORAGE_KEY, match[1]);
+    history.replaceState(null, '', window.location.pathname + window.location.search);
   }
 })();
 
-function normalizeProfileId(value) {
-  if (!value) return null;
-  return PROFILE_ALIASES[String(value).trim().toLowerCase()] || null;
-}
-
-export function selectedProfile() {
-  let profileId = null;
-  try {
-    profileId = normalizeProfileId(localStorage.getItem(PROFILE_STORAGE_KEY));
-  } catch {
-    profileId = null;
-  }
-  return PROFILES[profileId || 'personal'];
-}
-
-export function profileLoginUrl(profileId) {
-  const profile = normalizeProfileId(profileId) || 'personal';
-  const callback = new URL(window.location.origin + window.location.pathname);
-  callback.searchParams.set('profile', profile);
-  return `${AUTH_BASE}/sign-in/microsoft?callbackURL=${encodeURIComponent(callback.toString())}`;
-}
-
-export function profileLoginBookmarks() {
-  return Object.values(PROFILES).map(profile => ({
-    name: profile.label.replace(/\s+/g, '-'),
-    url: profileLoginUrl(profile.id),
-    description: `${profile.description} via auth.romaine.life`,
-  }));
+export function loginBookmark() {
+  const callback = window.location.origin + window.location.pathname;
+  return {
+    name: 'Login',
+    url: `${AUTH_BASE}/sign-in/microsoft?callbackURL=${encodeURIComponent(callback)}`,
+    description: 'Sign in with auth.romaine.life',
+  };
 }
 
 export function getToken() {
@@ -121,7 +56,10 @@ export async function authHeader() {
 
 function parseJwt(t) {
   try {
-    return JSON.parse(atob(t.split('.')[1]));
+    const encoded = t.split('.')[1];
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4 || 4)), '=');
+    return JSON.parse(atob(padded));
   } catch {
     return null;
   }
@@ -157,6 +95,16 @@ async function getOrRefreshToken() {
   }
 }
 
+function bookmarkSubForPayload(payload) {
+  if (LEGACY_BOOKMARK_SUBS.has(payload.sub)) return payload.sub;
+
+  const email = String(payload.email || '').trim().toLowerCase();
+  if (email === ENGINEERED_ARTS_EMAIL || email.endsWith(ENGINEERED_ARTS_DOMAIN)) {
+    return 'nelson-ea';
+  }
+  return 'nelson';
+}
+
 export async function checkAuth() {
   if (IS_BAKED) return true;
   const t = await getOrRefreshToken();
@@ -177,13 +125,11 @@ export async function fetchWhoami() {
   if (!t) return null;
   const payload = parseJwt(t);
   if (!payload) return null;
-  const profile = selectedProfile();
   return {
-    sub: profile.treeSub,
-    name: profile.label,
+    sub: bookmarkSubForPayload(payload),
+    name: payload.name || null,
     email: payload.email || payload.sub,
     authSub: payload.sub,
-    profile: profile.id,
   };
 }
 
