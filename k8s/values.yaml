@@ -2,4 +2,4 @@
 # push to main (via `sed` on this file).
 image:
   repository: romainecr.azurecr.io/my-homepage
-  tag: a86e574
+  tag: 2060a24
