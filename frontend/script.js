@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { logout, checkAuth, fetchWhoami, authHeader } from './auth.js';
+import { logout, checkAuth, fetchWhoami, authHeader, profileLoginBookmarks } from './auth.js';
 import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus, enterPromptMode as enterFzhPromptMode } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
@@ -75,6 +75,11 @@ function enterGoogleSearchMode() {
 }
 
 const SAMPLE_BOOKMARKS = [
+  {
+    name: "Login",
+    description: "Sign in through auth.romaine.life",
+    children: profileLoginBookmarks(),
+  },
   {
     name: "Getting Started",
     children: [
@@ -452,11 +457,12 @@ async function fetchBookmarks() {
   try {
     const treeId = await bookmarksTreeId();
     const url = `${CONFIG.fztApiBase}/fzt/tree/${treeId}`;
-    let res = await fetch(url, { headers: { ...authHeader() } });
+    const headers = await authHeader();
+    let res = await fetch(url, { headers });
 
     if (res.status === 503) {
       await ensureBackendReady();
-      res = await fetch(url, { headers: { ...authHeader() } });
+      res = await fetch(url, { headers: await authHeader() });
     }
 
     if (res.status === 401) {
@@ -490,7 +496,7 @@ async function putBookmarks(bookmarks) {
     tree: bookmarks,
     baseVersion: lastFetchedVersion,
   };
-  const putHeaders = { "Content-Type": "application/json", ...authHeader() };
+  const putHeaders = { "Content-Type": "application/json", ...(await authHeader()) };
 
   let res = await fetch(url, {
     method: "PUT",
