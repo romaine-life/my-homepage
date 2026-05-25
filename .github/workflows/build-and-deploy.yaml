@@ -196,16 +196,10 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE }}-build-cache:app
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE }}-build-cache:app,mode=max
 
-      - name: Install kustomize
+      - name: Bump image tag in k8s/values.yaml
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          KUSTOMIZE_VERSION=v5.8.1
-          curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin/
-
-      - name: Bump image tag in k8s/kustomization.yaml
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        working-directory: k8s
-        run: kustomize edit set image romainecr.azurecr.io/my-homepage=romainecr.azurecr.io/my-homepage:${{ env.TAG }}
+          sed -i "s|^  tag: .*|  tag: ${{ env.TAG }}|" k8s/values.yaml
 
       - name: Commit and push tag bump
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
