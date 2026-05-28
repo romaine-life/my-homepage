@@ -15,10 +15,9 @@ Release/deploy workflows are the only path that publishes images.
 
 Browser auth is handled by `auth.romaine.life`. Anonymous users see the normal playground tree with one `Login` leaf that opens `https://auth.romaine.life/sign-in/microsoft?callbackURL=<homepage>`. After the auth redirect returns to homepage, `frontend/auth.js` calls `https://auth.romaine.life/api/auth/token` with `credentials: include` and uses the returned JWT as the Bearer token for `fzt-frontend.romaine.life`.
 
-- **Active bookmark profiles**: personal maps to `nelson-bookmarks`; Engineered Arts maps to `nelson-ea-bookmarks`. The UI does not let the visitor choose a profile. The logged-in auth user determines the bookmark tree.
-- **User mapping**: legacy clean `sub` values (`nelson`, `nelson-ea`, `nelson-r1`) are honored directly. Auth users with `email === n.romaine@engineeredarts.com` or an `@engineeredarts.com` address map to `nelson-ea`; other browser-auth users map to `nelson`.
-- **Legacy token fallback**: `#token=<jwt>` is still absorbed into `localStorage['homepage_jwt']` for terminal-minted tokens, then scrubbed from the URL. This is compatibility only; the unauthenticated homepage path should use browser login.
-- **JWT claims**: `{ sub, email, name, role, iat, exp }`. The API's `requireAuth` middleware verifies the token and extracts identity for authorization; homepage maps the auth identity to the bookmark tree id client-side.
+- **Bookmark tree id = the JWT `sub`**: the tree is `<sub>-bookmarks`, derived directly from the auth.romaine.life token's opaque `sub`. No email->slug mapping, no human-readable slugs. Personal (`nelson@romaine.life`) → `e23pPWiNAUSAEMsxU6yEWrIiD2TnxZDf-bookmarks`; Engineered Arts (`n.romaine@engineeredarts.com`) → `i9ac64Hmr3yLKIvEr6BYSLBN64OVCU1M-bookmarks`. The visitor "switches profile" by signing in as the corresponding Microsoft account.
+- **No legacy token path**: the `#token=` / `localStorage['homepage_jwt']` terminal-mint fallback was deleted (auth.romaine.life migration). The only token source is `GET auth.romaine.life/api/auth/token` (cookie-attached).
+- **JWT claims**: `{ sub, email, name, role, iat, exp }`. fzt-frontend verifies the RS256 signature against `auth.romaine.life/api/auth/jwks`; the homepage uses only the opaque `sub` to pick the tree id.
 - **Local dev port 3001**: the frontend dev server runs on port 3001 (`npx serve`). The shared API runs on port 3000.
 
 ## fzt Terminal Integration
@@ -130,15 +129,14 @@ Settings and legacy data live in Azure Cosmos DB. Claude can query them directly
 - Headers: `Authorization` (HMAC token), `x-ms-date`, `x-ms-version: 2018-12-31`, `Content-Type: application/query+json`, `x-ms-documentdb-isquery: True`, `x-ms-documentdb-query-enablecrosspartition: True`
 - Documents are keyed by `userId` + `type` (e.g., `type: "bookmarks"`, `type: "settings"`)
 
-### Known userIds
+### Known tree ids
 
-Three identities with clean sub values (migrated from legacy OAuth IDs):
+Bookmark/menu trees are keyed by the auth.romaine.life opaque `sub`:
 
-- `nelson` — personal (`nelson-devops-project@outlook.com`), all profiles
-- `nelson-ea` — Engineered Arts (`n.romaine@engineeredarts.com`), profile 2
-- `nelson-r1` — R1 (`gromaine@r1rcm.com`), profile 3
+- personal — `nelson@romaine.life` (role=admin), sub `e23pPWiNAUSAEMsxU6yEWrIiD2TnxZDf` → `…-bookmarks` / `…-menu`
+- Engineered Arts — `n.romaine@engineeredarts.com` (role=user), sub `i9ac64Hmr3yLKIvEr6BYSLBN64OVCU1M` → `…-bookmarks`
 
-Blob filenames match: `nelson.yaml`, `nelson-ea.yaml`, `nelson-r1.yaml`. Legacy Google OAuth accounts remain in Cosmos DB but are unused.
+The legacy slug ids (`nelson-bookmarks`, `nelson-ea-bookmarks`, `nelson-menu`) and the dead `nelson-r1` identity were retired in the auth.romaine.life migration. Old slug-keyed docs are deleted once the sub-keyed copies are verified.
 
 ## fzt Deploy Pipeline
 
