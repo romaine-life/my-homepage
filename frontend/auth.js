@@ -1,33 +1,19 @@
 // Browser auth lives at auth.romaine.life. Anonymous users get one login
-// option; after sign-in the returned auth user determines which bookmark tree
-// loads. The old #token= path remains as a compatibility fallback for
-// terminal-minted tokens.
+// option; after sign-in the auth.romaine.life JWT's opaque `sub` keys the
+// bookmark tree (`<sub>-bookmarks`). There is no legacy terminal-minted
+// `#token=` path and no email->slug mapping — the token's `sub` is the
+// identity, full stop.
 
-const LEGACY_STORAGE_KEY = 'homepage_jwt';
 const AUTH_BASE = 'https://auth.romaine.life';
-const ENGINEERED_ARTS_EMAIL = 'n.romaine@engineeredarts.com';
-const ENGINEERED_ARTS_DOMAIN = '@engineeredarts.com';
-const LEGACY_BOOKMARK_SUBS = new Set(['nelson', 'nelson-ea', 'nelson-r1']);
 
 let cachedAuthToken = null;
 
 // Baked-deploy mode — SWA bypass hostname (work-computer access where
-// *.romaine.life is blocked). Auth and API are inert; bookmarks are served
-// from a static JSON file shipped alongside the frontend. checkAuth and
-// fetchWhoami fake a nelson-r1 session so the authenticated UI renders
-// normally. Edit/save buttons stay wired but silently fail on API calls —
-// that's intentional per the deploy's read-only framing.
+// *.romaine.life is blocked). Auth is inert; bookmarks are served from a
+// static JSON file shipped alongside the frontend, so the faked session's
+// sub never drives a fetch.
 const IS_BAKED = typeof window !== 'undefined' &&
   window.location.hostname.endsWith('.azurestaticapps.net');
-
-// Absorb `#token=<jwt>` on module load (runs once per page load).
-(function absorbTokenFragment() {
-  const match = window.location.hash.match(/#token=([A-Za-z0-9_\-.]+)/);
-  if (match) {
-    localStorage.setItem(LEGACY_STORAGE_KEY, match[1]);
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-  }
-})();
 
 export function loginBookmark() {
   const callback = window.location.origin + window.location.pathname;
@@ -41,12 +27,7 @@ export function loginBookmark() {
 export function getToken() {
   if (isJwtUsable(cachedAuthToken)) return cachedAuthToken;
   cachedAuthToken = null;
-  try {
-    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-    return isJwtUsable(legacy) ? legacy : null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export async function authHeader() {
@@ -95,41 +76,21 @@ async function getOrRefreshToken() {
   }
 }
 
-function bookmarkSubForPayload(payload) {
-  if (LEGACY_BOOKMARK_SUBS.has(payload.sub)) return payload.sub;
-
-  const email = String(payload.email || '').trim().toLowerCase();
-  if (email === ENGINEERED_ARTS_EMAIL || email.endsWith(ENGINEERED_ARTS_DOMAIN)) {
-    return 'nelson-ea';
-  }
-  return 'nelson';
-}
-
 export async function checkAuth() {
   if (IS_BAKED) return true;
-  const t = await getOrRefreshToken();
-  if (!t) {
-    try {
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-    } catch {
-      // Ignore storage cleanup failures.
-    }
-    return false;
-  }
-  return true;
+  return Boolean(await getOrRefreshToken());
 }
 
 export async function fetchWhoami() {
-  if (IS_BAKED) return { sub: 'nelson-r1', name: 'r1', email: 'gromaine@r1rcm.com' };
+  if (IS_BAKED) return { sub: 'baked', name: 'baked', email: 'baked@local' };
   const t = await getOrRefreshToken();
   if (!t) return null;
   const payload = parseJwt(t);
   if (!payload) return null;
   return {
-    sub: bookmarkSubForPayload(payload),
+    sub: payload.sub,
     name: payload.name || null,
     email: payload.email || payload.sub,
-    authSub: payload.sub,
   };
 }
 
@@ -150,12 +111,6 @@ function submitLogoutForm(callback) {
 
 export function logout() {
   cachedAuthToken = null;
-  try {
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-  } catch {
-    // Ignore storage cleanup failures.
-  }
-
   const callback = window.location.origin + window.location.pathname;
   submitLogoutForm(callback);
 }
