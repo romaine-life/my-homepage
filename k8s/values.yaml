@@ -2,4 +2,5 @@
 # push to main (via `sed` on this file).
 image:
   repository: romainecr.azurecr.io/my-homepage
-  tag: baac74c
+  # Quoted on purpose: a bare SHA like 4255e97 is valid YAML scientific notation; keep the quotes.
+  tag: "baac74c"
