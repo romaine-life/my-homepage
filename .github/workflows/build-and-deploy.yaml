@@ -199,7 +199,9 @@ jobs:
       - name: Bump image tag in k8s/values.yaml
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          sed -i "s|^  tag: .*|  tag: ${{ env.TAG }}|" k8s/values.yaml
+          # Quote the tag: short SHAs like 4255e97 are valid YAML scientific
+          # notation and parse as a float (4.255e+100) unless quoted.
+          sed -i "s|^  tag: .*|  tag: \"${{ env.TAG }}\"|" k8s/values.yaml
 
       - name: Commit and push tag bump
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
