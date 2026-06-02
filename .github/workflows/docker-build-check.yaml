@@ -58,7 +58,7 @@ jobs:
           echo "Resolved ${INPUT_REF} -> ${full_sha}"
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Azure Login (OIDC)
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
