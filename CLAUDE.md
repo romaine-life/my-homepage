@@ -53,7 +53,7 @@ Keep vendored files in sync when upstream `ambience` `cmd/ambience/web/sim.js` o
 
 ## Storage
 
-Bookmarks are served by the unified tree API at `/fzt/tree/:id` (route package `@nelsong6/fzt-frontend-routes`). The frontend calls `/auth/whoami` on first load to learn its JWT `sub`, then fetches `/fzt/tree/<sub>-bookmarks` (e.g. `nelson-bookmarks`).
+Bookmarks are served by the unified tree API at `/fzt/tree/:id` (route package `@romaine-life/fzt-frontend-routes`). The frontend calls `/auth/whoami` on first load to learn its JWT `sub`, then fetches `/fzt/tree/<sub>-bookmarks` (e.g. `nelson-bookmarks`).
 
 Tree docs live in `HomepageDB.fzt-frontend-data` (partition key path `/userId`, legacy name — every tree owns its own partition keyed by its id). Schema:
 
