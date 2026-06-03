@@ -74,18 +74,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # fzt.wasm, fzt-terminal.js/css, and fzt-web.js are gitignored in this
-        # repo — fetched at build time from nelsong6/fzt-browser releases so
+        # repo — fetched at build time from romaine-life/fzt-browser releases so
         # homepage always ships against the latest fzt engine. Also writes
         # version.json so the CI dashboard can see which fzt-browser version
         # is currently live.
         run: |
-          gh release download --repo nelsong6/fzt-browser \
+          gh release download --repo romaine-life/fzt-browser \
             --pattern "fzt.wasm" \
             --pattern "fzt-terminal.js" \
             --pattern "fzt-terminal.css" \
             --pattern "fzt-web.js" \
             --dir frontend --clobber
-          FZT_VERSION=$(gh release view --repo nelsong6/fzt-browser --json tagName -q '.tagName')
+          FZT_VERSION=$(gh release view --repo romaine-life/fzt-browser --json tagName -q '.tagName')
           echo "fzt_version=$FZT_VERSION" >> $GITHUB_OUTPUT
           printf '{"fztBrowser":"%s","sha":"%s","deployedAt":"%s"}\n' \
             "$FZT_VERSION" "$(git rev-parse --short=7 HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \

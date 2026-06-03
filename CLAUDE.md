@@ -80,7 +80,7 @@ Refs enable shared bookmarks across identities. A tree node can be `{ ref: "<ns>
 
 1. Conflict check: `baseVersion` compared against latest version; 409 with `currentTree` + `currentVersion` if mismatch
 2. `stripRefs()` walks the body — nodes tagged `_ref` collapse back to `{ ref: "<treeId>" }` pointers, losing any in-subtree edits
-3. One-tree-per-PUT: edits made inside a resolved `_ref` subtree do NOT propagate to the referenced tree. The UI must issue a separate `PUT /fzt/tree/<refId>` using the captured `_refVersion` as `baseVersion` (tracked in [fzt-frontend#4](https://github.com/nelsong6/fzt-frontend/issues/4))
+3. One-tree-per-PUT: edits made inside a resolved `_ref` subtree do NOT propagate to the referenced tree. The UI must issue a separate `PUT /fzt/tree/<refId>` using the captured `_refVersion` as `baseVersion` (tracked in [fzt-frontend#4](https://github.com/romaine-life/fzt-frontend/issues/4))
 
 ### Frontend ref handling
 
@@ -140,7 +140,7 @@ The legacy slug ids (`nelson-bookmarks`, `nelson-ea-bookmarks`, `nelson-menu`) a
 
 ## fzt Deploy Pipeline
 
-The deploy workflow (`build-and-deploy.yaml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser GitHub release at deploy time — none committed to git. Triggered by pushes under `frontend/**`, `backend/**`, the Dockerfile, or `k8s/**`, or manually via `workflow_dispatch`. A new fzt-browser release does not auto-redeploy here — retrigger manually (`gh workflow run build-and-deploy.yaml -R nelsong6/my-homepage`) when you want the latest fzt assets.
+The deploy workflow (`build-and-deploy.yaml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser GitHub release at deploy time — none committed to git. Triggered by pushes under `frontend/**`, `backend/**`, the Dockerfile, or `k8s/**`, or manually via `workflow_dispatch`. A new fzt-browser release does not auto-redeploy here — retrigger manually (`gh workflow run build-and-deploy.yaml -R romaine-life/my-homepage`) when you want the latest fzt assets.
 
 The build writes `frontend/version.json` (containing the fzt-browser release version used) so the CI dashboard can see which version is live.
 

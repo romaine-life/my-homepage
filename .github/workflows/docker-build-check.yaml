@@ -76,7 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download --repo nelsong6/fzt-browser \
+          gh release download --repo romaine-life/fzt-browser \
             --pattern "fzt.wasm" \
             --pattern "fzt-terminal.js" \
             --pattern "fzt-terminal.css" \
