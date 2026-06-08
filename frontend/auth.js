@@ -19,7 +19,7 @@ export function loginBookmark() {
   const callback = window.location.origin + window.location.pathname;
   return {
     name: 'Login',
-    url: `${AUTH_BASE}/sign-in/microsoft?callbackURL=${encodeURIComponent(callback)}`,
+    url: `${AUTH_BASE}/sign-in/microsoft?callbackURL=${encodeURIComponent(callback)}&prompt=select_account`,
     description: 'Sign in with auth.romaine.life',
   };
 }
