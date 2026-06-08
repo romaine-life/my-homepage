@@ -199,12 +199,12 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
     // Background fetch — silently check for updates without blocking fzt
     fetchBookmarks().then(fresh => {
-      if (!fresh || fresh.length === 0) return;
+      if (!fresh) return;
       saveCachedBookmarks(fresh);
       if (!cached) {
         // First load with no cache — apply directly
         currentBookmarks = fresh;
-        if (isTerminalReady()) loadFzhBookmarks(fresh);
+        fzhReady.then(() => loadFzhBookmarks(fresh));
       } else if (JSON.stringify(fresh) !== JSON.stringify(cached)) {
         // New data available — stash it and show reload indicator
         pendingBookmarks = fresh;
