@@ -199,18 +199,31 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
 
     // Background fetch — silently check for updates without blocking fzt
     fetchBookmarks().then(fresh => {
-      if (!fresh || fresh.length === 0) return;
-      saveCachedBookmarks(fresh);
+      if (!fresh) {
+        if (!cached) {
+          currentBookmarks = [];
+          fzhReady.then(() => loadFzhBookmarks([]));
+        }
+        return;
+      }
       if (!cached) {
         // First load with no cache — apply directly
+        saveCachedBookmarks(fresh);
         currentBookmarks = fresh;
-        if (isTerminalReady()) loadFzhBookmarks(fresh);
-      } else if (JSON.stringify(fresh) !== JSON.stringify(cached)) {
-        // New data available — stash it and show reload indicator
-        pendingBookmarks = fresh;
-        showSyncIndicator();
+        fzhReady.then(() => loadFzhBookmarks(fresh));
+      } else {
+        if (fresh.length > 0 && JSON.stringify(fresh) !== JSON.stringify(cached)) {
+          // New data available — stash it and show reload indicator
+          pendingBookmarks = fresh;
+          showSyncIndicator();
+        }
       }
-    }).catch(() => { /* offline — cache is fine */ });
+    }).catch(() => {
+      if (!cached) {
+        currentBookmarks = [];
+        fzhReady.then(() => loadFzhBookmarks([]));
+      }
+    });
 
     // Wire the loaded identity into the fzt session so the :whoami palette
     // leaf can emit it as a one-shot status on demand. Not rendered ambiently.
