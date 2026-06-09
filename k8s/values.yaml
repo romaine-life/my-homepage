@@ -3,4 +3,4 @@
 image:
   repository: romainecr.azurecr.io/my-homepage
   # Quoted on purpose: a bare SHA like 4255e97 is valid YAML scientific notation; keep the quotes.
-  tag: "3ca46b0"
+  tag: "4e57e44"
