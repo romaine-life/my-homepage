@@ -140,7 +140,7 @@ jobs:
             --image app \
             --dockerfile Dockerfile \
             --context . \
-            --paths 'Dockerfile .dockerignore backend/package.json backend/package-lock.json backend/server.js frontend/PerfectDOSVGA437.ttf frontend/SymbolsNerdFontMono-Regular.ttf frontend/ambience-client.js frontend/ambience-sim.js frontend/auth.js frontend/bookmarks-baked.json frontend/config.js frontend/favicon.ico frontend/fzh-terminal.js frontend/fzt-terminal.css frontend/fzt-terminal.js frontend/fzt-web.js frontend/fzt.wasm frontend/generate-config.sh frontend/index.html frontend/package.json frontend/package-lock.json frontend/script.js frontend/style.css frontend/sw.js frontend/version.json frontend/wasm_exec.js scripts/image-fingerprint.sh' \
+            --paths 'Dockerfile .dockerignore backend/package.json backend/package-lock.json backend/server.js frontend/PerfectDOSVGA437.ttf frontend/SymbolsNerdFontMono-Regular.ttf frontend/ambience frontend/auth.js frontend/bookmarks-baked.json frontend/config.js frontend/favicon.ico frontend/fzh-terminal.js frontend/fzt-terminal.css frontend/fzt-terminal.js frontend/fzt-web.js frontend/fzt.wasm frontend/generate-config.sh frontend/index.html frontend/package.json frontend/package-lock.json frontend/script.js frontend/style.css frontend/sw.js frontend/version.json frontend/wasm_exec.js scripts/image-fingerprint.sh' \
             | tee /tmp/my-homepage-image-fingerprint.txt \
             | awk -F= '$1 == "fingerprint" { print $2 }')"
           echo "ALIAS_TAG=app-${fingerprint}" >> "$GITHUB_ENV"
