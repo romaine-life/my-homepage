@@ -4,10 +4,9 @@
   "private": true,
   "description": "My Homepage Frontend",
   "scripts": {
-    "check:ambience": "node ../scripts/sync-ambience.mjs --check",
     "dev": "serve . -l 5500",
-    "sync:ambience": "node ../scripts/sync-ambience.mjs",
-    "start": "serve ."
+    "start": "serve .",
+    "vendor:ambience": "node ../scripts/vendor-ambience.mjs"
   },
   "devDependencies": {
     "serve": "^14.2.6"

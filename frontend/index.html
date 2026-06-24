@@ -8,7 +8,22 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <canvas id="ambience-canvas" data-ambience></canvas>
+  <!--
+    Ambient background, subscribed to ambience's DEFAULT rotating world (bare
+    /events + /snapshot). The runtime is VENDORED, version-pinned in
+    frontend/ambience/ (see scripts/vendor-ambience.mjs) and served from our own
+    origin — only the SSE stream points at ambience. The data-ambience-*-url
+    overrides load the WASM/runtime from those vendored copies instead of
+    re-fetching ambience's origin at runtime, which is what kept the old frozen
+    client desyncing against the live 60 Hz / 320x180 authority.
+  -->
+  <canvas
+    id="ambience-canvas"
+    data-ambience
+    data-ambience-wasm-url="/ambience/ambience.wasm"
+    data-ambience-wasm-exec-url="/ambience/wasm_exec.js"
+    data-ambience-runtime-url="/ambience/wasm_runtime.js"
+  ></canvas>
   <script>
     (function () {
       try {
@@ -35,8 +50,10 @@
   <div id="local-badge" class="hidden">LOCAL</div>
 
   <script src="wasm_exec.js"></script>
-  <script src="ambience-sim.js"></script>
-  <script src="ambience-client.js"></script>
+  <!-- Vendored ambience client (see frontend/ambience/, scripts/vendor-ambience.mjs).
+       sim.js must precede client.js: client.js binds to the AmbienceSim global. -->
+  <script src="/ambience/sim.js"></script>
+  <script src="/ambience/client.js"></script>
   <script type="module" src="script.js"></script>
 
   <script>
