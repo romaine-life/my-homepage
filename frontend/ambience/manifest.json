@@ -1,10 +1,10 @@
 {
   "base": "https://ambience.romaine.life",
   "files": {
-    "sim.js": 15428,
-    "client.js": 19132,
-    "wasm_runtime.js": 3591,
+    "sim.js": 16702,
+    "client.js": 25697,
+    "wasm_runtime.js": 4174,
     "wasm_exec.js": 16992,
-    "ambience.wasm": 6520532
+    "ambience.wasm": 6545589
   }
 }

@@ -208,10 +208,10 @@ window.AmbienceSim = window.AmbienceSim || { effects: {}, presets: {} };
 		grid[i + 2] = Math.max(grid[i + 2], color.b | 0);
 	}
 
-	function renderPixelGridEffect(effect, ctx, canvasW, canvasH, opts) {
+	function renderPixelGridEffect(effect, ctx, canvasW, canvasH, opts, gridOverride) {
 		opts = opts || {};
 		ctx.imageSmoothingEnabled = false;
-		const grid = ensurePixelGrid(effect);
+		const grid = gridOverride || ensurePixelGrid(effect);
 		if (opts.transparent) {
 			ctx.clearRect(0, 0, canvasW, canvasH);
 		} else {
@@ -330,6 +330,39 @@ window.AmbienceSim = window.AmbienceSim || { effects: {}, presets: {} };
 			ctx.imageSmoothingEnabled = false;
 			ctx.globalAlpha = 1 - t;
 			ctx.drawImage(this._scratch, 0, 0);
+			ctx.restore();
+		}
+		// renderOverlay mirrors render() for the near/overlay plane so the
+		// foreground drops crossfade between scenes alongside the back field.
+		renderOverlay(ctx, w, h, opts) {
+			opts = opts || {};
+			const t = this.progress();
+			const transparentOpts = Object.assign({}, opts, { transparent: true });
+			ctx.clearRect(0, 0, w, h);
+			if (typeof this.outgoing.renderOverlay !== 'function' || typeof this.incoming.renderOverlay !== 'function') {
+				return;
+			}
+			if (!this._overlayScratch || this._overlayScratch.width !== w || this._overlayScratch.height !== h) {
+				this._overlayScratch = (typeof OffscreenCanvas !== 'undefined')
+					? new OffscreenCanvas(w, h)
+					: document.createElement('canvas');
+				this._overlayScratch.width = w;
+				this._overlayScratch.height = h;
+			}
+			const sctx = this._overlayScratch.getContext('2d');
+			sctx.imageSmoothingEnabled = false;
+			sctx.clearRect(0, 0, w, h);
+			this.outgoing.renderOverlay(sctx, w, h, transparentOpts);
+
+			ctx.save();
+			ctx.globalAlpha = t;
+			this.incoming.renderOverlay(ctx, w, h, transparentOpts);
+			ctx.restore();
+
+			ctx.save();
+			ctx.imageSmoothingEnabled = false;
+			ctx.globalAlpha = 1 - t;
+			ctx.drawImage(this._overlayScratch, 0, 0);
 			ctx.restore();
 		}
 	}
