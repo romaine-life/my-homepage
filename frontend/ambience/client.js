@@ -18,98 +18,393 @@
 //   data-ambience-grid-w="320" / data-ambience-grid-h="180" — sim grid size
 //   data-ambience-transparent="false"  — paint solid bg (default: true)
 //   data-ambience-entropy="off"        — disable keystroke entropy upload
-//   data-ambience-delay-ticks="300"    — render this many authority ticks behind authority
+//   data-ambience-delay-ticks="90"     — pin how many world ticks behind the
+//     authority this page plays. Omit it to use the world's suggested delay.
 //   data-ambience-initial-fade-ms="1200" — fade in after the first authority snapshot
 //   data-ambience-initial-fade-color="#050505" — startup cover color
+//   data-ambience-intro-on-join="off" — disable the join intro. By default a
+//     freshly-connected client does NOT drop into the world mid-storm: it plays
+//     the effect's "intro" beat so the scene eases in (rain starts spawning from
+//     a near-empty grid) instead of the full atmosphere jolting on at once. Set
+//     to "off" to restore instant mid-simulation replication for this consumer.
 //
 // Effect agnostic: the server's snapshot broadcasts the effect type; this
 // file looks it up in AmbienceSim.effects[type]. Adding a new effect means
 // registering a Go-backed constructor through wasm_runtime.js — no change
 // needed here.
+//
+// Loaded with a `data-ambience-library` attribute on its <script> tag, this file
+// only defines window.AmbiencePlayback (the live monitor at / drives its own
+// canvas with it) and skips the auto-init.
 
 (function () {
 	'use strict';
 
-	function createPlaybackClock(opts) {
-		opts = opts || {};
-		const now = opts.now || (() => performance.now());
-		let tickMs = Math.max(1, opts.tickMs || 100);
-		let delayTicks = Math.max(0, opts.delayTicks || 0);
-		const softCatchupDrift = Math.max(1, opts.softCatchupDrift || 20);
-		const hardCatchupDrift = Math.max(softCatchupDrift, opts.hardCatchupDrift || 100);
-		const maxCatchupSteps = Math.max(1, opts.maxCatchupSteps || 5);
-		let authoritySampleTick = 0;
-		let authoritySampleAt = now();
-		let haveAuthoritySample = false;
+	// ── shared playback ─────────────────────────────────────────────────────
+	// Every page shows the same world at the same moment by playing the world
+	// tick a fixed delay behind the authority. Commands are stamped with the
+	// world tick they happened on and arrive well before playback reaches them,
+	// so each one lands on the same tick on every screen.
+	//
+	// Playback is stepped from the page's frames at the authority's rate. It
+	// never stops to wait and never sprints: a small difference from the target
+	// is absorbed by running a few percent fast or slow, which can't be seen.
+	// A larger gap (a stalled or hidden tab) is closed in a single frame, by
+	// simulating the missed ticks without drawing them or, beyond what is cheap
+	// to simulate, by restoring a fresh snapshot.
+	const PLAYBACK_DEFAULTS = {
+		tickMs: 1000 / 60,
+		delayTicks: 90,
+		// Rate correction: full correction at this many ticks off target.
+		correctionSpanTicks: 30,
+		maxSlowdown: 0.05,
+		maxSpeedup: 0.08,
+		// Behind by more than this, catch up in one undrawn burst.
+		jumpBehindTicks: 30,
+		// Behind by more than this, restore a fresh snapshot first.
+		resyncBehindTicks: 600,
+		// Ahead by more than delay + this, the world clock went backwards
+		// (authority restarted); restore a fresh snapshot.
+		resyncAheadTicks: 120,
+		// A frame gap longer than this is a stall, not a frame: don't turn it
+		// into steps, let the gap logic close it.
+		maxFrameMs: 250,
+		maxStepsPerFrame: 4,
+		// Authority clock samples older than this stop counting toward the
+		// estimate, so a server that slows down is followed.
+		sampleWindowMs: 10000,
+		retrySnapshotMs: 3000,
+	};
 
-		function noteAuthorityTick(tick, sampleAt) {
+	function createPlayback(opts) {
+		const o = Object.assign({}, PLAYBACK_DEFAULTS, opts || {});
+		const now = o.now || (() => performance.now());
+		const effects = o.effects;
+		const gridW = o.gridW;
+		const gridH = o.gridH;
+		let tickMs = o.tickMs;
+		let delayTicks = o.delayTicks;
+		const pinnedDelay = o.pinnedDelayTicks != null;
+		if (pinnedDelay) delayTicks = Math.max(0, o.pinnedDelayTicks);
+
+		let sim = null;
+		let effectType = null;
+		let ready = false;
+		let handshakeChecked = false;
+		let handshakeOK = true;
+		let lastError = null;
+		// playTick is the world tick the replica has been stepped to.
+		let playTick = 0;
+		let acc = 0;
+		let rate = 1;
+		let lastFrameAt = null;
+		let resyncInFlight = false;
+		let lastResyncAttemptAt = -Infinity;
+		const counters = { jumps: 0, jumpedTicks: 0, resyncs: 0, lateCommands: 0 };
+		const pending = [];
+		let nextSeq = 0;
+		// Authority clock samples: [worldTick, receivedAt].
+		const samples = [];
+
+		function noteSample(tick, at) {
 			if (!Number.isFinite(tick)) return;
-			authoritySampleTick = tick;
-			authoritySampleAt = Number.isFinite(sampleAt) ? sampleAt : now();
-			haveAuthoritySample = true;
+			// noteSnapshotSample handles a world clock that went backwards.
+			samples.push([tick, at]);
+			while (samples.length > 1 && at - samples[0][1] > o.sampleWindowMs) samples.shift();
 		}
 
-		function configure(next) {
-			if (!next) return;
-			if (Number.isFinite(next.tickMs) && next.tickMs > 0) tickMs = Math.max(1, next.tickMs);
-			if (Number.isFinite(next.delayTicks) && next.delayTicks >= 0) delayTicks = Math.max(0, Math.round(next.delayTicks));
+		// The authority's world tick right now. A sample can only arrive late,
+		// never early, so the least-delayed one in the window is the best
+		// estimate.
+		function authorityTick(at) {
+			let best = null;
+			for (const [tick, receivedAt] of samples) {
+				const est = tick + (at - receivedAt) / tickMs;
+				if (best === null || est > best) best = est;
+			}
+			return best;
 		}
 
-		function estimatedAuthorityTick(fallbackTick) {
-			if (!haveAuthoritySample) return Number.isFinite(fallbackTick) ? fallbackTick : 0;
-			const elapsedTicks = Math.floor((now() - authoritySampleAt) / tickMs);
-			return authoritySampleTick + Math.max(0, elapsedTicks);
+		// A snapshot is the authority's state when it was sent (an edge's cached
+		// one trails by seconds, never minutes). One far behind the estimate means
+		// the world clock went backwards (an authority restarted without its
+		// saved state): forget the old clock.
+		function noteSnapshotSample(tick, at) {
+			const est = authorityTick(at);
+			if (est !== null && tick < est - o.resyncBehindTicks) samples.length = 0;
+			noteSample(tick, at);
 		}
 
-		function targetPlaybackTick(fallbackTick) {
-			return Math.max(0, estimatedAuthorityTick(fallbackTick) - delayTicks);
+		function targetTick(at) {
+			const a = authorityTick(at);
+			return a === null ? null : a - delayTicks;
 		}
 
-		function stepsFor(currentTick) {
-			const current = Number.isFinite(currentTick) ? currentTick : 0;
-			const target = targetPlaybackTick(current);
-			const drift = target - current;
-			if (drift <= 0) return 0;
-			if (drift > hardCatchupDrift) return maxCatchupSteps;
-			if (drift > 1) return Math.min(maxCatchupSteps, 2);
-			return 1;
+		function worldTickOf(cmd, data) {
+			if (data && Number.isFinite(data.worldTick)) return data.worldTick;
+			if (cmd && Number.isFinite(cmd.tick)) return cmd.tick;
+			if (data && Number.isFinite(data.tick)) return data.tick;
+			return 0;
 		}
 
-		function debugState(currentTick, queueInfo) {
-			const current = Number.isFinite(currentTick) ? currentTick : 0;
-			const authorityTick = estimatedAuthorityTick(current);
-			const playbackTick = targetPlaybackTick(current);
-			const queuedCommands = typeof queueInfo === 'number'
-				? queueInfo
-				: (queueInfo && Number.isFinite(queueInfo.queuedCommands) ? queueInfo.queuedCommands : 0);
-			const nextQueuedCommandTick = queueInfo && Number.isFinite(queueInfo.nextQueuedCommandTick)
-				? queueInfo.nextQueuedCommandTick
-				: null;
-			const maxQueuedCommandTick = queueInfo && Number.isFinite(queueInfo.maxQueuedCommandTick)
-				? queueInfo.maxQueuedCommandTick
-				: null;
-			const bufferedAheadTicks = maxQueuedCommandTick === null
-				? 0
-				: Math.max(0, maxQueuedCommandTick - playbackTick);
+		// runHandshake verifies the client supports every effect the world may
+		// broadcast. Returns false (and logs) when an advertised effect is missing
+		// from this build. An older authority that advertises nothing passes.
+		function runHandshake(served) {
+			if (!Array.isArray(served) || served.length === 0) return true;
+			const missing = served.filter((name) => !effects[name]);
+			if (missing.length === 0) return true;
+			lastError = `client missing world effects: ${missing.join(', ')}`;
+			console.error(
+				'[ambience] handshake failed — this client was not built to render ' +
+				`effect(s) [${missing.join(', ')}] served by ${o.server || 'this world'}. ` +
+				'Update the ambience client to a version that includes them.',
+			);
+			return false;
+		}
+
+		// applySnapshot puts the replica at the snapshot's moment. A different
+		// effect type crossfades from the outgoing replica; the same type is
+		// restored in place.
+		function applySnapshot(data, worldTick, seq) {
+			if (!handshakeChecked) {
+				handshakeChecked = true;
+				handshakeOK = runHandshake(data && data.servedEffects);
+			}
+			if (!handshakeOK) return;
+			const newType = (data && data.type) || 'rain';
+			const Ctor = effects[newType];
+			if (!Ctor) {
+				lastError = `unknown effect type: ${newType}`;
+				console.warn('ambience-client: unknown effect type', newType);
+				return;
+			}
+			lastError = null;
+			const first = !sim;
+			const typeChanged = !first && newType !== effectType;
+			if (first || typeChanged) {
+				const incoming = new Ctor(gridW, gridH, {});
+				try { incoming.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
+				// A "fresh" effect (rain) is steady-state: a page that is just
+				// joining starts it from its intro so it eases in instead of
+				// jolting on mid-storm. "restore" effects carry history and keep
+				// the snapshot as-is.
+				if (first && o.introOnJoin && data && data.joinMode === 'fresh' && incoming.triggerEvent) {
+					try { incoming.triggerEvent('intro'); } catch (err) { console.error('join intro failed', err); }
+				}
+				sim = typeChanged && o.EffectTransition ? new o.EffectTransition(sim, incoming) : incoming;
+			} else {
+				try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
+			}
+			effectType = newType;
+			playTick = worldTick;
+			acc = 0;
+			// Commands that arrived before this snapshot and fall at or before
+			// its moment are already part of its state.
+			const cutoff = seq === undefined ? Infinity : seq;
+			for (let i = pending.length - 1; i >= 0; i--) {
+				if (pending[i].tick <= worldTick && pending[i].seq < cutoff) pending.splice(i, 1);
+			}
+			ready = true;
+			if (o.onSnapshot) o.onSnapshot(data, { first, typeChanged });
+		}
+
+		function applyCommand(item) {
+			const { cmd, data } = item;
+			switch (cmd.kind) {
+				case 'snapshot':
+					applySnapshot(data, item.tick, item.seq);
+					break;
+				case 'config':
+					if (!sim) break;
+					try { sim.setConfig(data); } catch (err) { console.error('bad config', err); }
+					break;
+				case 'trigger':
+					if (sim && sim.triggerEvent) sim.triggerEvent(cmd.event);
+					break;
+			}
+			if (o.onApplied) o.onApplied(cmd, data);
+		}
+
+		function queue(item) {
+			item.seq = nextSeq++;
+			// Stable insert by tick: same-tick commands keep arrival order.
+			let i = pending.length;
+			while (i > 0 && pending[i - 1].tick > item.tick) i--;
+			pending.splice(i, 0, item);
+		}
+
+		// stepOnce advances one world tick. Commands due by then apply first; a
+		// snapshot due by then is that tick's state, so it replaces the step.
+		function stepOnce() {
+			const next = playTick + 1;
+			let snapped = false;
+			while (pending.length > 0 && pending[0].tick <= next) {
+				const item = pending.shift();
+				applyCommand(item);
+				if (item.cmd.kind === 'snapshot') snapped = true;
+			}
+			if (!snapped) {
+				sim.step();
+				playTick = next;
+			}
+			if (sim.isTransition && sim.done()) {
+				if (sim.outgoing && typeof sim.outgoing.destroy === 'function') sim.outgoing.destroy();
+				sim = sim.incoming;
+			}
+		}
+
+		// onCommand takes every authority command. Config, trigger and later
+		// snapshots wait in the buffer for their world tick; scene and metric
+		// are display metadata and pass straight through.
+		function onCommand(cmd, data) {
+			const at = now();
+			const tick = worldTickOf(cmd, data);
+			if (cmd.kind === 'clock' && data) {
+				if (Number(data.tickRateMs) > 0) tickMs = Number(data.tickRateMs);
+				if (!pinnedDelay && Number(data.suggestedDelayTicks) >= 0) delayTicks = Number(data.suggestedDelayTicks);
+			}
+			if (cmd.kind === 'snapshot') noteSnapshotSample(tick, at);
+			else noteSample(tick, at);
+			switch (cmd.kind) {
+				case 'snapshot':
+					if (!ready) {
+						applySnapshot(data, tick, nextSeq++);
+						// Start where the world is now, minus the delay, so the
+						// page needs no warm-up.
+						const target = targetTick(at);
+						if (target !== null && target > playTick) catchUp(Math.floor(target), false);
+					} else if (tick > playTick) {
+						queue({ tick, cmd, data });
+					} else {
+						// A snapshot for a moment already played (a reconnect, a
+						// restarted authority): take it as the new truth.
+						applySnapshot(data, tick, nextSeq++);
+					}
+					break;
+				case 'config':
+				case 'trigger':
+					if (ready && tick <= playTick) {
+						counters.lateCommands++;
+						applyCommand({ tick, cmd, data });
+					} else {
+						queue({ tick, cmd, data });
+					}
+					break;
+			}
+		}
+
+		// catchUp simulates to `to` without drawing in between.
+		function catchUp(to, counted) {
+			const from = playTick;
+			while (playTick < to) stepOnce();
+			if (counted && playTick > from) {
+				counters.jumps++;
+				counters.jumpedTicks += playTick - from;
+			}
+		}
+
+		function resync() {
+			if (resyncInFlight || !o.fetchSnapshot) return;
+			const at = now();
+			if (at - lastResyncAttemptAt < o.retrySnapshotMs) return;
+			lastResyncAttemptAt = at;
+			resyncInFlight = true;
+			Promise.resolve()
+				.then(() => o.fetchSnapshot())
+				.then((data) => {
+					if (!data) return;
+					counters.resyncs++;
+					const tick = worldTickOf(null, data);
+					noteSnapshotSample(tick, now());
+					applySnapshot(data, tick);
+				})
+				.catch((err) => { console.warn('ambience-client: snapshot resync failed', err); })
+				.finally(() => { resyncInFlight = false; });
+		}
+
+		// frame advances playback to `at` and returns how many ticks it stepped.
+		function frame(at) {
+			if (at === undefined) at = now();
+			if (!ready || !sim) {
+				lastFrameAt = at;
+				return 0;
+			}
+			const dt = lastFrameAt === null ? 0 : at - lastFrameAt;
+			lastFrameAt = at;
+			const target = targetTick(at);
+			if (target === null) return 0;
+			const before = playTick;
+			const behind = target - playTick;
+			if (behind > o.resyncBehindTicks || behind < -(delayTicks + o.resyncAheadTicks)) {
+				resync();
+				// Keep animating while the snapshot is fetched.
+				if (behind > 0) acc += Math.min(dt, o.maxFrameMs) / tickMs * (1 + o.maxSpeedup);
+			} else if (behind > o.jumpBehindTicks) {
+				catchUp(Math.floor(target), true);
+				acc = 0;
+				rate = 1;
+				return playTick - before;
+			} else {
+				const correction = behind / o.correctionSpanTicks;
+				rate = 1 + Math.max(-o.maxSlowdown, Math.min(o.maxSpeedup, correction * (correction < 0 ? o.maxSlowdown : o.maxSpeedup)));
+				if (dt <= o.maxFrameMs) acc += (dt / tickMs) * rate;
+			}
+			let steps = Math.floor(acc);
+			if (steps > o.maxStepsPerFrame) steps = o.maxStepsPerFrame;
+			acc -= steps;
+			if (acc > 1) acc = 1;
+			for (let i = 0; i < steps && sim; i++) stepOnce();
+			return playTick - before;
+		}
+
+		function debugState() {
+			const at = now();
+			const authority = authorityTick(at);
+			const target = targetTick(at);
+			let nextQueuedCommandTick = null;
+			let maxQueuedCommandTick = null;
+			for (const item of pending) {
+				if (nextQueuedCommandTick === null || item.tick < nextQueuedCommandTick) nextQueuedCommandTick = item.tick;
+				if (maxQueuedCommandTick === null || item.tick > maxQueuedCommandTick) maxQueuedCommandTick = item.tick;
+			}
 			return {
-				authorityTick,
-				playbackTick,
-				simTick: current,
-				driftTicks: playbackTick - current,
+				authorityTick: authority === null ? null : Math.floor(authority),
+				playbackTick: target === null ? null : Math.floor(target),
+				simTick: playTick,
+				driftTicks: target === null ? 0 : target - playTick,
 				delayTicks,
-				bufferedAheadTicks,
+				rate,
 				tickMs,
-				queuedCommands,
+				queuedCommands: pending.length,
 				nextQueuedCommandTick,
 				maxQueuedCommandTick,
-				haveAuthoritySample,
+				bufferedAheadTicks: maxQueuedCommandTick === null || target === null
+					? 0
+					: Math.max(0, maxQueuedCommandTick - Math.floor(target)),
+				haveAuthoritySample: samples.length > 0,
+				jumps: counters.jumps,
+				jumpedTicks: counters.jumpedTicks,
+				resyncs: counters.resyncs,
+				lateCommands: counters.lateCommands,
 			};
 		}
 
-		return { noteAuthorityTick, configure, estimatedAuthorityTick, targetPlaybackTick, stepsFor, debugState };
+		return {
+			onCommand,
+			frame,
+			debugState,
+			get sim() { return sim; },
+			get effectType() { return effectType; },
+			get ready() { return ready; },
+			get lastError() { return lastError; },
+		};
 	}
 
-	window.AmbienceClientClock = window.AmbienceClientClock || { createPlaybackClock };
+	window.AmbiencePlayback = window.AmbiencePlayback || { createPlayback, defaults: PLAYBACK_DEFAULTS };
+
+	const script = document.currentScript;
+	if (script && script.hasAttribute && script.hasAttribute('data-ambience-library')) return;
 
 	function loadScript(src) {
 		return new Promise((resolve, reject) => {
@@ -150,50 +445,51 @@
 		canvas.dataset.ambienceWasmExecUrl || trimSlashes(SERVER) + '/wasm_exec.js';
 	const RUNTIME_URL =
 		canvas.dataset.ambienceRuntimeUrl || trimSlashes(SERVER) + '/wasm_runtime.js';
-	const GRID_W = parseInt(canvas.dataset.ambienceGridW || '320', 10);
-	const GRID_H = parseInt(canvas.dataset.ambienceGridH || '180', 10);
+	const GRID_W = parseInt(canvas.dataset.ambienceGridW || '640', 10);
+	const GRID_H = parseInt(canvas.dataset.ambienceGridH || '360', 10);
 	const TRANSPARENT = canvas.dataset.ambienceTransparent !== 'false';
 	const ENTROPY_ENABLED = canvas.dataset.ambienceEntropy !== 'off';
-	const TICK_MS = 1000 / 60;
-	const HAS_DELAY_ATTR = canvas.dataset.ambienceDelayTicks != null;
-	const PLAYBACK_DELAY_TICKS = Math.max(0, parseInt(canvas.dataset.ambienceDelayTicks || '300', 10) || 0);
+	const PINNED_DELAY_TICKS = canvas.dataset.ambienceDelayTicks != null
+		? Math.max(0, parseInt(canvas.dataset.ambienceDelayTicks, 10) || 0)
+		: null;
 	const INITIAL_FADE_MS = Math.max(0, parseInt(canvas.dataset.ambienceInitialFadeMs || '1200', 10) || 0);
-	const MAX_CATCHUP_STEPS = 5;
-	const SOFT_CATCHUP_DRIFT = 20;
-	const HARD_CATCHUP_DRIFT = 100;
+	const INTRO_ON_JOIN = canvas.dataset.ambienceIntroOnJoin !== 'off';
 
 	const ctx = canvas.getContext('2d');
 	if (canvas.style) canvas.style.imageRendering = canvas.style.imageRendering || 'pixelated';
 	ctx.imageSmoothingEnabled = false;
+	// Optional second canvas the consumer stacks ABOVE its own UI. When present
+	// we paint the near/overlay plane into it each tick (the drops the world
+	// promotes via the effect's overlay lever) so a few drops cross in front of
+	// the page. The main field is unchanged whether or not this canvas exists.
+	const overlayCanvas = document.querySelector('canvas[data-ambience-overlay]');
+	const overlayCtx = overlayCanvas ? overlayCanvas.getContext('2d') : null;
+	if (overlayCtx) {
+		if (overlayCanvas.style) overlayCanvas.style.imageRendering = overlayCanvas.style.imageRendering || 'pixelated';
+		overlayCtx.imageSmoothingEnabled = false;
+	}
 	let initialFadeCover = null;
 
 	// Mark body so consumer CSS can conditionally adapt (e.g. make terminal
 	// backgrounds transparent only when ambience is actually running).
 	document.body.classList.add('ambience-on');
 
+	let needsRender = true;
 	function resize() {
 		const dpr = window.devicePixelRatio || 1;
 		canvas.width = Math.floor(window.innerWidth * dpr);
 		canvas.height = Math.floor(window.innerHeight * dpr);
+		if (overlayCanvas) {
+			overlayCanvas.width = canvas.width;
+			overlayCanvas.height = canvas.height;
+		}
+		needsRender = true;
 	}
 	resize();
 	window.addEventListener('resize', resize);
 
-	// The first snapshot tells us what effect is running. Until then, render
-	// nothing; creating a local fallback effect makes subscribers visibly
-	// diverge and can crossfade two worlds together during startup.
-	let effectType = null;
-	let sim = null;
-	let ready = false;
 	let initialFadePending = false;
 	let initialFadeStarted = false;
-	let lastError = null;
-	// Capability handshake: on the first snapshot we verify this client's
-	// runtime supports every effect the world advertises in servedEffects. If
-	// one is missing, the client was not built for this world — fail loudly
-	// (log + refuse to render) instead of silently mis-rendering.
-	let handshakeChecked = false;
-	let handshakeOK = true;
 	const sceneState = {
 		currentName: null,
 		nextName: null,
@@ -201,14 +497,6 @@
 		durationTicks: null,
 		startedAtTick: null,
 	};
-	const pendingCommands = [];
-	const clock = createPlaybackClock({
-		tickMs: TICK_MS,
-		delayTicks: PLAYBACK_DELAY_TICKS,
-		softCatchupDrift: SOFT_CATCHUP_DRIFT,
-		hardCatchupDrift: HARD_CATCHUP_DRIFT,
-		maxCatchupSteps: MAX_CATCHUP_STEPS,
-	});
 
 	function makeInitialFadeCover() {
 		if (INITIAL_FADE_MS <= 0) return null;
@@ -260,12 +548,6 @@
 		initialFadeCover = null;
 	}
 
-	function getSimTick(s) {
-		if (!s) return 0;
-		if (s.isTransition && s.incoming) return getSimTick(s.incoming);
-		return Number.isFinite(s.tick) ? s.tick : 0;
-	}
-
 	function getSimDebug(s) {
 		if (!s) return null;
 		if (s.isTransition && s.incoming) return getSimDebug(s.incoming);
@@ -297,139 +579,56 @@
 		if (Number.isFinite(data.sceneRemaining)) sceneState.sceneRemaining = data.sceneRemaining;
 	}
 
-	function stepTowardAuthorityClock() {
-		const current = getSimTick(sim);
-		const steps = clock.stepsFor(current);
-		if (steps <= 0) {
-			applyDueCommands(current);
-			return;
-		}
-		for (let i = 0; i < steps; i++) {
-			applyDueCommands(getSimTick(sim) + 1);
-			sim.step();
-		}
-		applyDueCommands(getSimTick(sim));
-	}
-
-	function queueCommand(cmd, data) {
-		pendingCommands.push({ cmd, data });
-		pendingCommands.sort((a, b) => {
-			const at = Number.isFinite(a.cmd.tick) ? a.cmd.tick : 0;
-			const bt = Number.isFinite(b.cmd.tick) ? b.cmd.tick : 0;
-			return at - bt;
-		});
-	}
-
-	function commandQueueTelemetry() {
-		let nextQueuedCommandTick = null;
-		let maxQueuedCommandTick = null;
-		for (const item of pendingCommands) {
-			const tick = Number.isFinite(item.cmd.tick) ? item.cmd.tick : null;
-			if (tick === null) continue;
-			if (nextQueuedCommandTick === null || tick < nextQueuedCommandTick) nextQueuedCommandTick = tick;
-			if (maxQueuedCommandTick === null || tick > maxQueuedCommandTick) maxQueuedCommandTick = tick;
-		}
-		return {
-			queuedCommands: pendingCommands.length,
-			nextQueuedCommandTick,
-			maxQueuedCommandTick,
-		};
-	}
-
-	function applyDueCommands(playbackTick) {
-		while (pendingCommands.length > 0) {
-			const item = pendingCommands[0];
-			const tick = Number.isFinite(item.cmd.tick) ? item.cmd.tick : playbackTick;
-			if (tick > playbackTick) return;
-			pendingCommands.shift();
-			applyCommandNow(item.cmd, item.data);
-		}
-	}
-
-	// runHandshake verifies the client supports every effect the world may
-	// broadcast. Returns false (and logs) when an advertised effect is missing
-	// from this build. An older authority that advertises nothing passes.
-	function runHandshake(served) {
-		if (!Array.isArray(served) || served.length === 0) return true;
-		const missing = served.filter((name) => !AmbienceSim.effects[name]);
-		if (missing.length === 0) return true;
-		lastError = `client missing world effects: ${missing.join(', ')}`;
-		console.error(
-			'[ambience] handshake failed — this client was not built to render ' +
-			`effect(s) [${missing.join(', ')}] served by ${SERVER}. Update the ` +
-			'ambience client to a version that includes them.',
-		);
-		return false;
-	}
-
-	function applyCommandNow(cmd, data) {
-		switch (cmd.kind) {
-			case 'snapshot': {
-				if (!handshakeChecked) {
-					handshakeChecked = true;
-					handshakeOK = runHandshake(data && data.servedEffects);
-				}
-				if (!handshakeOK) break;
-				const newType = (data && data.type) || 'rain';
-				const ctor = AmbienceSim.effects[newType];
-				if (!ctor) {
-					lastError = `unknown effect type: ${newType}`;
-					console.warn('ambience-client: unknown effect type', newType);
-					break;
-				}
-				lastError = null;
-				if (!sim) {
-					sim = new ctor(GRID_W, GRID_H, {});
-					try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
-					effectType = newType;
-					initialFadePending = true;
-				} else if (newType !== effectType) {
-					const incoming = new ctor(GRID_W, GRID_H, {});
-					try { incoming.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
-					sim = AmbienceSim.EffectTransition
-						? new AmbienceSim.EffectTransition(sim, incoming)
-						: incoming;
-					effectType = newType;
-				} else {
-					try { sim.restoreSnapshot(data); } catch (err) { console.error('bad snapshot', err); }
-				}
-				updateSceneFromSnapshot(data);
-				ready = true;
-				if (Number.isFinite(data && data.tick)) {
-					for (let i = pendingCommands.length - 1; i >= 0; i--) {
-						const queuedTick = Number.isFinite(pendingCommands[i].cmd.tick) ? pendingCommands[i].cmd.tick : data.tick;
-						if (queuedTick <= data.tick) pendingCommands.splice(i, 1);
-					}
-				}
-				break;
-			}
-			case 'config':
-				if (!sim) break;
-				try { sim.setConfig(data); } catch (err) { console.error('bad config', err); }
-				break;
-			case 'trigger':
-				if (sim && sim.triggerEvent) sim.triggerEvent(cmd.event);
-				break;
-			case 'scene':
-			case 'metric':
-				applySceneData(data);
-				break;
-		}
-	}
+	const playback = createPlayback({
+		effects: AmbienceSim.effects,
+		EffectTransition: AmbienceSim.EffectTransition,
+		gridW: GRID_W,
+		gridH: GRID_H,
+		server: SERVER,
+		pinnedDelayTicks: PINNED_DELAY_TICKS,
+		introOnJoin: INTRO_ON_JOIN,
+		fetchSnapshot: () => fetch(trimSlashes(SERVER) + '/snapshot', { cache: 'no-store' })
+			.then((r) => {
+				if (!r.ok) throw new Error('snapshot ' + r.status);
+				return r.json();
+			}),
+		onSnapshot: (data, info) => {
+			updateSceneFromSnapshot(data);
+			if (info.first) initialFadePending = true;
+			needsRender = true;
+		},
+	});
 
 	window.AmbienceClient = {
 		getDebugState: () => Object.assign(
 			{
-				effectType,
-				ready,
+				effectType: playback.effectType,
+				ready: playback.ready,
 				initialFadeStarted,
 				scene: Object.assign({}, sceneState),
-				sim: getSimDebug(sim),
-				lastError,
+				sim: getSimDebug(playback.sim),
+				lastError: playback.lastError,
 			},
-			clock.debugState(getSimTick(sim), commandQueueTelemetry()),
+			playback.debugState(),
 		),
 	};
+
+	function render() {
+		const sim = playback.sim;
+		if (!sim) return;
+		sim.render(ctx, canvas.width, canvas.height, { transparent: TRANSPARENT });
+		if (overlayCtx) {
+			if (typeof sim.renderOverlay === 'function') {
+				sim.renderOverlay(overlayCtx, overlayCanvas.width, overlayCanvas.height, { transparent: true });
+			} else {
+				overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+			}
+		}
+		if (initialFadePending) {
+			initialFadePending = false;
+			revealInitialScene();
+		}
+	}
 
 	async function start() {
 		if (!AmbienceSim.wasm) {
@@ -443,58 +642,24 @@
 			wasmURL: WASM_URL,
 		});
 
-		// Patch the subscribe snapshot handler so we can detect effect-type
-		// changes. The shared subscribe() swaps config on the existing sim; a
-		// type switch crossfades the outgoing effect into the incoming one.
-		const es = new EventSource(SERVER.replace(/\/+$/, '') + '/events');
+		const es = new EventSource(trimSlashes(SERVER) + '/events');
 		es.addEventListener('message', (e) => {
 			let cmd;
 			try { cmd = JSON.parse(e.data); } catch (_) { return; }
 			const data = typeof cmd.data === 'string' ? JSON.parse(cmd.data) : cmd.data;
-			if (cmd.kind === 'clock' && data) {
-				clock.configure({
-					tickMs: Number(data.tickRateMs),
-					delayTicks: HAS_DELAY_ATTR ? undefined : Number(data.suggestedDelayTicks),
-				});
-				clock.noteAuthorityTick(Number.isFinite(data.tick) ? data.tick : cmd.tick);
-			} else {
-				clock.noteAuthorityTick(cmd.tick);
-			}
-			switch (cmd.kind) {
-				case 'snapshot':
-					applyCommandNow(cmd, data);
-					break;
-				case 'metric':
-				case 'scene':
-					applyCommandNow(cmd, data);
-					break;
-				case 'clock':
-					break;
-				case 'config':
-				case 'trigger':
-					queueCommand(cmd, data);
-					break;
-			}
+			if (cmd.kind === 'scene' || cmd.kind === 'metric') applySceneData(data);
+			playback.onCommand(cmd, data);
 		});
 
-		// Step and render on the authority cadence. rAF stays out of the
-		// simulation clock so background-tab throttling cannot silently change
-		// the replica's tick math.
-		setInterval(() => {
-			if (ready) stepTowardAuthorityClock();
-			// Unwrap a finished crossfade so we drop the outgoing sim and stop
-			// paying its render cost.
-			if (!sim) return;
-			if (sim.isTransition && sim.done()) {
-				if (sim.outgoing && typeof sim.outgoing.destroy === 'function') sim.outgoing.destroy();
-				sim = sim.incoming;
+		// Step and draw once per display frame.
+		(function loop() {
+			if (playback.frame(performance.now()) > 0) needsRender = true;
+			if (needsRender) {
+				needsRender = false;
+				render();
 			}
-			sim.render(ctx, canvas.width, canvas.height, { transparent: TRANSPARENT });
-			if (initialFadePending) {
-				initialFadePending = false;
-				revealInitialScene();
-			}
-		}, Math.max(1, Math.round(TICK_MS)));
+			requestAnimationFrame(loop);
+		})();
 	}
 
 	function startEntropy() {
@@ -516,7 +681,7 @@
 			const bytes = buf.splice(0, buf.length);
 			// Fire-and-forget; keepalive=true so it completes on unload
 			try {
-				fetch(SERVER.replace(/\/+$/, '') + '/entropy', {
+				fetch(trimSlashes(SERVER) + '/entropy', {
 					method: 'POST',
 					body: new Uint8Array(bytes),
 					keepalive: true,

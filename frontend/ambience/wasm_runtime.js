@@ -90,6 +90,17 @@ window.AmbienceSim = window.AmbienceSim || { effects: {}, presets: {} };
 				this.grid = window.ambienceWasm.frame(this.id);
 				api._helpers.renderPixelGridEffect(this, ctx, canvasW, canvasH, opts);
 			}
+
+			// renderOverlay paints only the near/overlay drops (effects that
+			// expose one — rain) into ctx, always transparent, so a consumer can
+			// composite it ABOVE its own UI. Effects without an overlay frame get
+			// an empty buffer and draw nothing.
+			renderOverlay(ctx, canvasW, canvasH, opts) {
+				if (!window.ambienceWasm.overlayFrame) return;
+				const grid = window.ambienceWasm.overlayFrame(this.id);
+				const overlayOpts = Object.assign({}, opts, { transparent: true });
+				api._helpers.renderPixelGridEffect(this, ctx, canvasW, canvasH, overlayOpts, grid);
+			}
 		};
 	}
 
