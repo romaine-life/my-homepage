@@ -58,13 +58,7 @@ Uses the shared auto-init client from the `ambience` repo, served from our OWN o
 
 Bookmarks are served by the unified tree API at `/fzt/tree/:id` (route package `@romaine-life/fzt-frontend-routes`). The frontend calls `/auth/whoami` on first load to learn its JWT `sub`, then fetches `/fzt/tree/<sub>-bookmarks` (e.g. `nelson-bookmarks`).
 
-Tree docs live in `HomepageDB.fzt-frontend-data` (partition key path `/userId`, legacy name — every tree owns its own partition keyed by its id). Schema:
-
-| `type` | `id` format | Partition (userId) | Notes |
-|---|---|---|---|
-| `tree` | `tree_<treeId>_v<N>` | `<treeId>` | Flat tree ids. Personal trees by convention are `<sub>-<kind>` (e.g. `nelson-bookmarks`, `nelson-menu`); shared trees are free-form names (e.g. `google`). No ACL — any authenticated caller can read/write any tree; identity scoping is client-side. |
-
-Each save bumps `N`; GET returns the latest `N` per tree id. Pre-2026-04-18 state: bookmarks on Azure Blob, then briefly `type='bookmarks'` / `'bookmarks-shared'` docs, then `type='tree'` with `namespace`+`name` partitioned by `/userId` scheme. All migrated into the current flat-id shape; old docs preserved for rollback but unreferenced.
+Trees live in the private repo [romaine-life/at](https://github.com/romaine-life/at) as `trees/<treeId>.json` (`{ version, updatedAt, tree }`); fzt-frontend's backend keeps a clone and commits each save straight to its main (FZT-59, 2026-10-30). Tree ids are flat. Personal trees by convention are `<sub>-<kind>` (`<sub>-bookmarks`, `<sub>-menu`); shared trees are free-form names (e.g. `google`). No ACL: any authenticated caller can read/write any tree; identity scoping is client-side. Each save bumps `version`; a stale `baseVersion` gets 409. History is the repo's history; the Cosmos container `HomepageDB.fzt-frontend-data` that held them before is deleted, with every version archived in that repo at `archive/cosmos-export.jsonl.gz`.
 
 Settings still live in `HomepageDB.userdata` as `type='settings'` docs (separate container). The `backgroundUrl` field in settings controls the page background image.
 
@@ -116,7 +110,7 @@ Settings and legacy data live in Azure Cosmos DB. Claude can query them directly
 - **Account**: `infra-cosmos-serverless` (defined in `infra-bootstrap/tofu/cosmos-serverless.tf`)
 - **Resource group**: `infra`
 - **Database**: `HomepageDB`
-- **Containers**: `userdata` (settings + legacy per-user docs, partitioned by `/userId`) and `fzt-frontend-data` (bookmarks + the unified fzt tree, partitioned by `/userId`, accessed at runtime by fzt-frontend's backend)
+- **Containers**: `userdata` (settings + legacy per-user docs, partitioned by `/userId`). Bookmarks and the fzt trees moved to romaine-life/at (see Storage).
 - **Endpoint**: `https://infra-cosmos-serverless.documents.azure.com:443/`
 
 ### Auth flow
