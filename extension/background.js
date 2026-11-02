@@ -1,9 +1,3 @@
-chrome.commands.onCommand.addListener((command) => {
-  if (command === "open-homepage") {
-    chrome.tabs.create({ url: "https://homepage.romaine.life" });
-  }
-});
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || message.type !== "homepage.openTab") return false;
   if (!sender.tab || !sender.tab.url || !sender.tab.url.startsWith("https://homepage.romaine.life/")) {
