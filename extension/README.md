@@ -4,7 +4,10 @@ Chrome extension for `homepage.romaine.life`.
 
 ## Behavior
 
-- `Ctrl+Shift+H` opens `https://homepage.romaine.life` in a Chrome tab.
+- Chrome's New Tab page is overridden with a small local page that immediately
+  navigates to `https://homepage.romaine.life`.
+- `Ctrl+T`, the new-tab button, and the browser's New Tab menu item all use the
+  homepage without an AutoHotkey remap or another background process.
 - On `homepage.romaine.life`, `Ctrl+Enter` opens the selected homepage link in a background tab.
 - On `homepage.romaine.life`, `Ctrl+Shift+Enter` opens the selected homepage link in an active tab.
 
@@ -19,5 +22,5 @@ Recommended visibility: unlisted.
 
 Suggested short description:
 
-> Opens homepage.romaine.life and selected homepage links in Chrome tabs.
+> Uses homepage.romaine.life for new tabs and opens selected homepage links in Chrome tabs.
 

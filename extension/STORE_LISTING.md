@@ -10,15 +10,16 @@ Homepage New Tab
 
 ## Summary
 
-Opens homepage.romaine.life and selected homepage links in Chrome tabs.
+Uses homepage.romaine.life for new tabs and opens selected homepage links in Chrome tabs.
 
 ## Description
 
 Homepage New Tab connects Chrome tab behavior to `homepage.romaine.life`.
 
-It provides a keyboard shortcut for opening the homepage and lets the homepage open selected links in Chrome tabs using extension APIs:
+It replaces Chrome's New Tab page with homepage.romaine.life and lets the
+homepage open selected links in Chrome tabs using extension APIs:
 
-- `Ctrl+Shift+H` opens `homepage.romaine.life`.
+- `Ctrl+T`, the new-tab button, and the New Tab menu item open `homepage.romaine.life`.
 - `Ctrl+Enter` opens the selected homepage link in a background tab.
 - `Ctrl+Shift+Enter` opens the selected homepage link in an active tab.
 

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Homepage New Tab",
-  "version": "1.1",
-  "description": "Opens homepage.romaine.life and selected homepage links in Chrome tabs",
+  "version": "1.2",
+  "description": "Uses homepage.romaine.life for new tabs and opens selected homepage links in Chrome tabs",
   "homepage_url": "https://homepage.romaine.life",
   "icons": {
     "16": "icons/icon16.png",
@@ -12,13 +12,8 @@
   },
   "permissions": ["tabs"],
   "host_permissions": ["https://homepage.romaine.life/*"],
-  "commands": {
-    "open-homepage": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+H"
-      },
-      "description": "Open homepage in a new tab"
-    }
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
   },
   "content_scripts": [
     {
