@@ -1,0 +1,78 @@
+name: Infrastructure
+'on':
+  pull_request:
+    branches:
+    - main
+  push:
+    branches:
+    - main
+  workflow_dispatch: null
+concurrency:
+  group: opentofu-my-homepage.tfstate
+  cancel-in-progress: false
+jobs:
+  tofu:
+    name: Plan and apply
+    runs-on: ubuntu-latest
+    enable-openid-connect: true
+    env:
+      ARM_USE_OIDC: 'true'
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Check infrastructure inputs
+      id: inputs
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      run: |
+        set -euo pipefail
+        base="$BASE_SHA"
+        if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then base=HEAD^; fi
+        if git diff --name-only "$base" HEAD | grep -qE '^(tofu/|\.forgejo/workflows/tofu\.yaml$)'; then
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+        fi
+    - uses: https://github.com/opentofu/setup-opentofu@v2
+      if: steps.inputs.outputs.changed == 'true'
+      with:
+        tofu_version: 1.11.0
+        tofu_wrapper: false
+    - name: Install Azure CLI
+      if: steps.inputs.outputs.changed == 'true'
+      run: curl -fsSL https://aka.ms/InstallAzureCLIDeb | bash
+    - uses: https://github.com/azure/login@v3
+      if: steps.inputs.outputs.changed == 'true'
+      with:
+        client-id: ${{ vars.ARM_CLIENT_ID }}
+        tenant-id: ${{ vars.ARM_TENANT_ID }}
+        subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+    - name: Shared provider definitions
+      if: steps.inputs.outputs.changed == 'true'
+      working-directory: tofu
+      run: |
+        set -euo pipefail
+        for file in shared-providers.tf .terraform.lock.hcl; do
+          printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- -o "$file" "$GITHUB_SERVER_URL/api/v1/repos/romaine-life/infra-bootstrap/raw/tofu/provider/$file?ref=main"
+        done
+      env:
+        TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+    - name: Initialize and plan
+      if: steps.inputs.outputs.changed == 'true'
+      working-directory: tofu
+      run: |
+        set -euo pipefail
+        tofu init -backend-config="resource_group_name=infra" -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" -backend-config="container_name=tfstate" -backend-config="key=my-homepage.tfstate"
+        tofu plan -out=tfplan
+    - uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+      if: steps.inputs.outputs.changed == 'true'
+      with:
+        name: homepage-infrastructure-plan
+        path: tofu/tfplan
+        retention-days: 1
+    - name: Apply checked default-branch plan
+      if: steps.inputs.outputs.changed == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      working-directory: tofu
+      run: tofu apply tfplan

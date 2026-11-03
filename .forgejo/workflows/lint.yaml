@@ -1,0 +1,31 @@
+name: Lint
+'on':
+  pull_request: null
+  push:
+    branches:
+    - main
+  workflow_dispatch: null
+jobs:
+  code-quality:
+    name: Repository lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: https://github.com/opentofu/setup-opentofu@v2
+      with:
+        tofu_version: 1.11.0
+        tofu_wrapper: false
+    - name: Repository naming, newline and format checks
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        from pathlib import Path
+        import subprocess,re
+        for name in subprocess.check_output(['git','ls-files','-z']).decode().split('\0'):
+            if not name or not Path(name).is_file(): continue
+            data=Path(name).read_bytes()
+            if data and b'\0' not in data and not data.endswith(b'\n'): raise SystemExit(f'Missing trailing newline: {name}')
+            if name.endswith('.yml'): raise SystemExit(f'Use .yaml: {name}')
+            if '_' in name and not re.search(r'PULL_REQUEST_TEMPLATE|ISSUE_TEMPLATE|\.(md|js|py|webp|png|jpe?g|gif|svg|ico|txt)$',name): raise SystemExit(f'Underscore in filename: {name}')
+        PY
+        tofu fmt -recursive -check

@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FZT_API_BASE="${FZT_API_BASE:-https://fzt-frontend.home.romaine.life}"
 
 # Homepage version is a semver tag (vX.Y.Z) computed by build-and-deploy.yaml
-# from the latest GitHub release, or "dev" for local runs without it set.
+# from the latest Forgejo release, or "dev" for local runs without it set.
 HOMEPAGE_VERSION="${HOMEPAGE_VERSION:-dev}"
 
 cat <<EOF > "$SCRIPT_DIR/config.js"
