@@ -13,7 +13,7 @@ Release/deploy workflows are the only path that publishes images.
 
 ## Auth
 
-Browser auth is handled by `auth.romaine.life`. Anonymous users see the normal playground tree with one `Login` leaf that opens `https://auth.romaine.life/sign-in/microsoft?callbackURL=<homepage>`. After the auth redirect returns to homepage, `frontend/auth.js` calls `https://auth.romaine.life/api/auth/token` with `credentials: include` and uses the returned JWT as the Bearer token for `fzt-frontend.romaine.life`.
+Browser auth is handled by `auth.romaine.life`. Anonymous users see the normal playground tree with one `Login` leaf that opens `https://auth.romaine.life/sign-in/microsoft?callbackURL=<homepage>`. After the auth redirect returns to homepage, `frontend/auth.js` calls `https://auth.romaine.life/api/auth/token` with `credentials: include` and uses the returned JWT as the Bearer token for `fzt-frontend.home.romaine.life`.
 
 - **Bookmark tree id = the JWT `sub`**: the tree is `<sub>-bookmarks`, derived directly from the auth.romaine.life token's opaque `sub`. No email->slug mapping, no human-readable slugs. Personal (`nelson@romaine.life`) → `e23pPWiNAUSAEMsxU6yEWrIiD2TnxZDf-bookmarks`; Engineered Arts (`n.romaine@engineeredarts.com`) → `i9ac64Hmr3yLKIvEr6BYSLBN64OVCU1M-bookmarks`. The visitor "switches profile" by signing in as the corresponding Microsoft account.
 - **No legacy token path**: the `#token=` / `localStorage['homepage_jwt']` terminal-mint fallback was deleted (auth.romaine.life migration). The only token source is `GET auth.romaine.life/api/auth/token` (cookie-attached).

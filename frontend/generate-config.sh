@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Default to the production fzt-frontend service. Override with FZT_API_BASE
 # if a staging deployment needs to point elsewhere.
-FZT_API_BASE="${FZT_API_BASE:-https://fzt-frontend.romaine.life}"
+FZT_API_BASE="${FZT_API_BASE:-https://fzt-frontend.home.romaine.life}"
 
 # Homepage version is a semver tag (vX.Y.Z) computed by build-and-deploy.yaml
 # from the latest GitHub release, or "dev" for local runs without it set.

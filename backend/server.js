@@ -1,6 +1,6 @@
 // Per-app backend for homepage.romaine.life. Serves the static frontend —
 // no server-side logic. All dynamic data (bookmarks, auth) is handled by
-// fzt-frontend.romaine.life via Bearer-authenticated fetches.
+// fzt-frontend.home.romaine.life via Bearer-authenticated fetches.
 //
 // Kept as a Node/Express pod (not nginx) to match the house pattern across
 // house-hunt, investing, kill-me, plant-agent, llm-explorer, diagrams,
