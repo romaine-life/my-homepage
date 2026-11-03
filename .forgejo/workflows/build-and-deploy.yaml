@@ -238,7 +238,7 @@ jobs:
             sleep 30
           done
           if [ "$passed" != true ]; then echo "Image pin PR $pr did not finish all required checks"; exit 1; fi
-          body=$(jq -n --arg head "$(git rev-parse HEAD)" '{Do:"squash",merge_when_checks_succeed:true,delete_branch_after_merge:true,head_commit_id:$head}')
+          body=$(jq -n --arg head "$(git rev-parse HEAD)" '{Do:"squash",delete_branch_after_merge:true,head_commit_id:$head}')
           printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- -H 'Content-Type: application/json' -d "$body" "$api/pulls/$pr/merge"
         fi
     - name: Publish validated source release on Forgejo
