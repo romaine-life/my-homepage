@@ -11,7 +11,7 @@ Refresh recipe (run on a machine with az login + the romaine-api.py helper):
 
     TOKEN=$(python "$PROFILE_DIR/scripts/romaine-api.py" mint-token --identity nelson-r1)
     curl -sS -H "Authorization: Bearer $TOKEN" \\
-      https://fzt-frontend.romaine.life/fzt/tree/nelson-r1-bookmarks \\
+      https://fzt-frontend.home.romaine.life/fzt/tree/nelson-r1-bookmarks \\
       -o frontend/bookmarks-baked.json
     python frontend/bake-bookmarks.py
     npx --yes @azure/static-web-apps-cli deploy ./frontend \\

@@ -2,6 +2,6 @@
 // homepageVersion is the short SHA of the build commit (or "dev" locally).
 // Both overridden at generate-config.sh time.
 export const CONFIG = {
-  fztApiBase: "https://fzt-frontend.romaine.life",
+  fztApiBase: "https://fzt-frontend.home.romaine.life",
   homepageVersion: "dev",
 };

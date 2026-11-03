@@ -123,7 +123,7 @@ jobs:
           echo "Next homepage version: $next"
 
       - name: Generate frontend/config.js
-        # Uses the default (fzt-frontend.romaine.life) unless FZT_API_BASE is set.
+        # Uses the default (fzt-frontend.home.romaine.life) unless FZT_API_BASE is set.
         env:
           HOMEPAGE_VERSION: ${{ steps.homepage-version.outputs.version }}
         run: |

@@ -13,7 +13,7 @@ Release/deploy workflows are the only path that publishes images.
 
 ## Auth
 
-Browser auth is handled by `auth.romaine.life`. Anonymous users see the normal playground tree with one `Login` leaf that opens `https://auth.romaine.life/sign-in/microsoft?callbackURL=<homepage>`. After the auth redirect returns to homepage, `frontend/auth.js` calls `https://auth.romaine.life/api/auth/token` with `credentials: include` and uses the returned JWT as the Bearer token for `fzt-frontend.romaine.life`.
+Browser auth is handled by `auth.romaine.life`. Anonymous users see the normal playground tree with one `Login` leaf that opens `https://auth.romaine.life/sign-in/microsoft?callbackURL=<homepage>`. After the auth redirect returns to homepage, `frontend/auth.js` calls `https://auth.romaine.life/api/auth/token` with `credentials: include` and uses the returned JWT as the Bearer token for `fzt-frontend.home.romaine.life`.
 
 - **Bookmark tree id = the JWT `sub`**: the tree is `<sub>-bookmarks`, derived directly from the auth.romaine.life token's opaque `sub`. No email->slug mapping, no human-readable slugs. Personal (`nelson@romaine.life`) → `e23pPWiNAUSAEMsxU6yEWrIiD2TnxZDf-bookmarks`; Engineered Arts (`n.romaine@engineeredarts.com`) → `i9ac64Hmr3yLKIvEr6BYSLBN64OVCU1M-bookmarks`. The visitor "switches profile" by signing in as the corresponding Microsoft account.
 - **No legacy token path**: the `#token=` / `localStorage['homepage_jwt']` terminal-mint fallback was deleted (auth.romaine.life migration). The only token source is `GET auth.romaine.life/api/auth/token` (cookie-attached).
@@ -56,11 +56,15 @@ Uses the shared auto-init client from the `ambience` repo, served from our OWN o
 
 ## Storage
 
-Bookmarks are served by the unified tree API at `/fzt/tree/:id` (route package `@romaine-life/fzt-frontend-routes`). The frontend calls `/auth/whoami` on first load to learn its JWT `sub`, then fetches `/fzt/tree/<sub>-bookmarks` (e.g. `nelson-bookmarks`).
+The static frontend reads and edits bookmarks through the authenticated home API at
+`https://fzt-frontend.home.romaine.life/fzt/tree/<id>`. Tree ids are the JWT subject
+plus `-bookmarks`; the API verifies auth.romaine.life's JWT before reading or writing.
+Trees are versioned files in [Forgejo's romaine-life/at](https://forgejo.romaine.life/romaine-life/at),
+`trees/<id>.json`, and every write is a commit there. A stale `baseVersion` returns 409.
+The NAS service is deployed by fzt-frontend's `homesvc.json` (FORGEJO-6).
 
-Trees live in the private repo [romaine-life/at](https://github.com/romaine-life/at) as `trees/<treeId>.json` (`{ version, updatedAt, tree }`); fzt-frontend's backend keeps a clone and commits each save straight to its main (FZT-59, 2026-10-30). Tree ids are flat. Personal trees by convention are `<sub>-<kind>` (`<sub>-bookmarks`, `<sub>-menu`); shared trees are free-form names (e.g. `google`). No ACL: any authenticated caller can read/write any tree; identity scoping is client-side. Each save bumps `version`; a stale `baseVersion` gets 409. History is the repo's history; the Cosmos container `HomepageDB.fzt-frontend-data` that held them before is deleted, with every version archived in that repo at `archive/cosmos-export.jsonl.gz`.
-
-Settings still live in `HomepageDB.userdata` as `type='settings'` docs (separate container). The `backgroundUrl` field in settings controls the page background image.
+This app's Node server serves static assets only and does not read Cosmos DB.
+Legacy Cosmos tree versions are preserved in at's `archive/cosmos-export.jsonl.gz`.
 
 ## Bookmark Ref System
 
