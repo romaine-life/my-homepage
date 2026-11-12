@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: https://github.com/opentofu/setup-opentofu@v2
+    - uses: romaine-life/pipeline-templates/actions/check-fetches@main
+    - uses: opentofu/setup-opentofu@v2
       with:
         tofu_version: 1.11.0
         tofu_wrapper: false
