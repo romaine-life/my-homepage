@@ -5,12 +5,13 @@
 #
 # config.js is generated at CI time by frontend/generate-config.sh before
 # this Dockerfile copies the frontend/ dir.
-FROM node:20-alpine
+FROM artifacts.home.romaine.life/dockerhub/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
 
 WORKDIR /app
 
 # Install backend deps first (cache layer — only invalidated on lockfile change).
 COPY backend/package*.json backend/
+ARG NPM_CONFIG_REGISTRY=https://artifacts.home.romaine.life/npm/npm/
 RUN cd backend && npm install --omit=dev
 
 # Bring the backend source and the static frontend into the runtime image.

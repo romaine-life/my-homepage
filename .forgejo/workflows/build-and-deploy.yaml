@@ -59,11 +59,7 @@ jobs:
         if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA^{commit}" || git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(backend/|frontend/|Dockerfile$|\.dockerignore$|scripts/image-fingerprint\.sh$|\.forgejo/workflows/build-and-deploy\.yaml$)'; then
           echo changed=true >> "$GITHUB_OUTPUT"
         fi
-    - name: Install Azure CLI
-      run: |
-        if ! command -v az; then
-          curl -fsSL https://aka.ms/InstallAzureCLIDeb | sudo bash # internet: Azure CLI install source
-        fi
+    - uses: romaine-life/pipeline-templates/actions/azure-cli@main
       if: steps.scope.outputs.changed == 'true'
     - name: Azure Login (OIDC)
       uses: azure/login@v3
@@ -117,7 +113,9 @@ jobs:
     - name: Set up Buildx
       uses: docker/setup-buildx-action@v4
       with:
-        driver-opts: network=host
+        driver-opts: |
+          network=host
+          image=artifacts.home.romaine.life/dockerhub/moby/buildkit:buildx-stable-1@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
       if: steps.scope.outputs.changed == 'true'
     - name: Compute image fingerprint
       id: fingerprint
