@@ -1,4 +1,4 @@
-# The image tag is bumped by .forgejo/workflows/build-and-deploy.yaml on every
+# The image tag is bumped by .forgejo/workflows/ci.yml on every
 # push to main (via `sed` on this file).
 image:
   repository: romainecr.azurecr.io/my-homepage

@@ -6,7 +6,6 @@ Read `CLAUDE.md` for the project architecture and domain notes.
 
 Agent pods are not expected to have Docker. Do not report missing local Docker
 as a blocker. Run available repo checks first, then use PR CI as the normal
-container build gate: `.forgejo/workflows/docker-build-check.yaml` performs a
-throwaway Docker build with `push: false`. If image-packaging feedback is
-needed before a PR is ready, manually dispatch that workflow with `git_ref`.
-Release/deploy workflows are the only path that publishes images.
+container build gate: on a pull request, the `image` job in `.forgejo/workflows/ci.yml`
+builds and smoke-tests the image with `push: false`. Pushes to `main` and manual
+dispatches of CI publish the image; only a push to `main` pins and deploys it.

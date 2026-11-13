@@ -1,0 +1,316 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Git ref or commit SHA to build. Leave blank to build the dispatch revision.
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: write
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-{0}', github.ref) || 'build-and-deploy' }}
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: romaine-life/pipeline-templates/actions/check-fetches@main
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo code=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE...HEAD")
+          if grep -qvE '\.md$|^docs/|^LICENSE$' <<< "$files"; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          fi
+
+  # Not gated: its conventions also check documentation.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.11.0
+          tofu_wrapper: false
+      - name: Repository naming, newline and format checks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,re
+          for name in subprocess.check_output(['git','ls-files','-z']).decode().split('\0'):
+              if not name or not Path(name).is_file(): continue
+              data=Path(name).read_bytes()
+              if data and b'\0' not in data and not data.endswith(b'\n'): raise SystemExit(f'Missing trailing newline: {name}')
+              if name.endswith('.yml') and name != '.forgejo/workflows/ci.yml': raise SystemExit(f'Use .yaml: {name}')
+              if '_' in name and not re.search(r'PULL_REQUEST_TEMPLATE|ISSUE_TEMPLATE|\.(md|js|py|webp|png|jpe?g|gif|svg|ico|txt)$',name): raise SystemExit(f'Underscore in filename: {name}')
+          PY
+          tofu fmt -recursive -check
+
+  # A pull request builds and smoke-tests the image without publishing it; a push
+  # or dispatch publishes it, and a push to main also pins it and releases.
+  image:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    enable-openid-connect: true
+    env:
+      REGISTRY: romainecr.azurecr.io
+      IMAGE: my-homepage
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+      - name: Resolve requested ref
+        env:
+          INPUT_REF: ${{ inputs.git_ref || github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags origin '+refs/heads/*:refs/remotes/origin/*'
+
+          target_ref="${INPUT_REF:-$GITHUB_SHA}"
+          if full_sha="$(git rev-parse --verify "${target_ref}^{commit}" 2>/dev/null)"; then
+            :
+          elif git show-ref --verify --quiet "refs/remotes/origin/${target_ref}"; then
+            full_sha="$(git rev-parse "refs/remotes/origin/${target_ref}^{commit}")"
+          elif git show-ref --verify --quiet "refs/tags/${target_ref}"; then
+            full_sha="$(git rev-parse "refs/tags/${target_ref}^{commit}")"
+          else
+            echo "::error::Unable to resolve git_ref '${target_ref}' to a commit."
+            exit 1
+          fi
+
+          git checkout --detach "$full_sha"
+          echo "Resolved ${target_ref} -> ${full_sha}"
+      - name: Check application image inputs
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" != push ] || [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA^{commit}" || git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(backend/|frontend/|Dockerfile$|\.dockerignore$|scripts/image-fingerprint\.sh$|\.forgejo/workflows/ci\.yml$)'; then
+            echo changed=true >> "$GITHUB_OUTPUT"
+          fi
+      - uses: romaine-life/pipeline-templates/actions/azure-cli@main
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request'
+      - name: Azure Login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request'
+      - name: Download latest fzt-browser release assets from Forgejo
+        id: fzt-version
+        env:
+          TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          api="$GITHUB_SERVER_URL/api/v1/repos/romaine-life/fzt-browser"
+          release=$(printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- "$api/releases/latest")
+          version=$(echo "$release" | jq -er .tag_name)
+          for name in fzt.wasm fzt-terminal.js fzt-terminal.css fzt-web.js; do
+            url=$(echo "$release" | jq -er --arg name "$name" '.assets[] | select(.name==$name) | .browser_download_url')
+            printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sSL --header @- -o "frontend/$name" "$url"
+            test -s "frontend/$name"
+          done
+          echo "fzt_version=$version" >> "$GITHUB_OUTPUT"
+          printf '{"fztBrowser":"%s","sha":"%s","deployedAt":"%s"}\n' "$version" "$(git rev-parse HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > frontend/version.json
+        if: steps.scope.outputs.changed == 'true'
+      - name: Resolve image tag
+        id: tag
+        run: |
+          TAG="$(git rev-parse --short=7 HEAD)"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "Built ref $(git rev-parse HEAD) as ${REGISTRY}/${IMAGE}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+        if: steps.scope.outputs.changed == 'true'
+      - name: Compute next homepage version
+        id: homepage-version
+        run: |
+          set -euo pipefail
+          git fetch --tags
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          if [ -z "$latest" ]; then next=v1.0.0; else next="${latest%.*}.$((${latest##*.} + 1))"; fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+      - name: Generate frontend/config.js
+        env:
+          HOMEPAGE_VERSION: ${{ github.event_name == 'pull_request' && 'docker-build-check' || steps.homepage-version.outputs.version }}
+        run: |
+          chmod +x ./frontend/generate-config.sh
+          ./frontend/generate-config.sh
+        if: steps.scope.outputs.changed == 'true'
+      - name: ACR login
+        run: az acr login --name romainecr
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request'
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: |
+            network=host
+            image=artifacts.home.romaine.life/dockerhub/moby/buildkit:buildx-stable-1@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+        if: steps.scope.outputs.changed == 'true'
+      - name: Compute image fingerprint
+        id: fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          fingerprint="$(scripts/image-fingerprint.sh \
+            --image app \
+            --dockerfile Dockerfile \
+            --context . \
+            --paths 'Dockerfile .dockerignore backend/package.json backend/package-lock.json backend/server.js frontend/PerfectDOSVGA437.ttf frontend/SymbolsNerdFontMono-Regular.ttf frontend/ambience frontend/auth.js frontend/bookmarks-baked.json frontend/config.js frontend/favicon.ico frontend/fzh-terminal.js frontend/fzt-terminal.css frontend/fzt-terminal.js frontend/fzt-web.js frontend/fzt.wasm frontend/generate-config.sh frontend/index.html frontend/package.json frontend/package-lock.json frontend/script.js frontend/style.css frontend/sw.js frontend/version.json frontend/wasm_exec.js scripts/image-fingerprint.sh' \
+            | tee /tmp/my-homepage-image-fingerprint.txt \
+            | awk -F= '$1 == "fingerprint" { print $2 }')"
+          echo "ALIAS_TAG=app-${fingerprint}" >> "$GITHUB_ENV"
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request'
+      - name: Check existing image aliases
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if az acr repository show-tags \
+              --name romainecr \
+              --repository "${IMAGE}" \
+              --query "[?@=='${TAG}'] | [0]" \
+              --output tsv | grep -qx "${TAG}"; then
+            echo "target_exists=true" >>"${GITHUB_OUTPUT}"
+          else
+            echo "target_exists=false" >>"${GITHUB_OUTPUT}"
+          fi
+
+          if az acr repository show-tags \
+              --name romainecr \
+              --repository "${IMAGE}" \
+              --query "[?@=='${ALIAS_TAG}'] | [0]" \
+              --output tsv | grep -qx "${ALIAS_TAG}"; then
+            echo "alias_exists=true" >>"${GITHUB_OUTPUT}"
+            echo "Found reusable image ${REGISTRY}/${IMAGE}:${ALIAS_TAG}"
+          else
+            echo "alias_exists=false" >>"${GITHUB_OUTPUT}"
+            echo "No reusable image found for app fingerprint ${{ steps.fingerprint.outputs.fingerprint }}"
+          fi
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request'
+      - name: Retag existing fingerprint image
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request' && (steps.image.outputs.target_exists != 'true' && steps.image.outputs.alias_exists == 'true')
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr import \
+            --name romainecr \
+            --source "${REGISTRY}/${IMAGE}:${ALIAS_TAG}" \
+            --image "${IMAGE}:${TAG}" \
+            --force
+      - name: Build and push image
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request' && (steps.image.outputs.target_exists != 'true' && steps.image.outputs.alias_exists != 'true')
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.ALIAS_TAG }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE }}-build-cache:app
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE }}-build-cache:app,mode=max
+          network: host
+      - name: Build image without publishing
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+          network: host
+      - name: Smoke-test the image
+        run: |
+          set -euo pipefail
+          name="homepage-smoke-$GITHUB_RUN_ID"
+          trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
+          docker run -d --network none --name "$name" "$REGISTRY/$IMAGE:$TAG"
+          for n in $(seq 1 40); do
+            if docker exec "$name" node -e 'fetch("http://127.0.0.1:3000/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then break; fi
+            sleep 1
+          done
+          docker exec -e EXPECTED_SHA="$(git rev-parse HEAD)" "$name" node --input-type=module -e '
+          import assert from "node:assert/strict";
+          const base="http://127.0.0.1:3000";
+          assert.equal((await (await fetch(base+"/health")).json()).status,"healthy");
+          assert.equal((await (await fetch(base+"/version.json")).json()).sha,process.env.EXPECTED_SHA);
+          for (const [path,type] of [["/","text/html"],["/config.js","javascript"],["/fzt-terminal.js","javascript"],["/fzt-terminal.css","text/css"],["/fzt-web.js","javascript"]]) {
+            const r=await fetch(base+path); assert.equal(r.status,200,path); assert.ok(r.headers.get("content-type").includes(type),path); assert.ok((await r.text()).length>0,path);
+          }
+          const wasm=Buffer.from(await (await fetch(base+"/fzt.wasm")).arrayBuffer());
+          assert.equal(wasm.subarray(0,4).toString("hex"),"0061736d");
+          console.log("Homepage health, frontend assets and exact source SHA verified");'
+        if: steps.scope.outputs.changed == 'true'
+      - name: Propose and merge the checked image pin
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          source=$(git rev-parse HEAD)
+          branch="FORGEJO-3-image-$GITHUB_RUN_ID"
+          git switch -c "$branch"
+          sed -i "s|^  tag: .*|  tag: \"${TAG}\"|" k8s/values.yaml
+          git config user.name forgejo-actions
+          git config user.email forgejo-actions@noreply.romaine.life
+          git add k8s/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: pin my-homepage image $TAG"
+            git push origin "$branch"
+            body=$(jq -n --arg head "$branch" '{head:$head,base:"main",title:"Deploy validated homepage image",body:"https://openproject.romaine.life/wp/FORGEJO-3"}')
+            pr=$(printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- -H 'Content-Type: application/json' -d "$body" "$api/pulls" | jq -er .number)
+            head=$(git rev-parse HEAD)
+            passed=false
+            for n in $(seq 1 60); do
+              statuses=$(printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- "$api/commits/$head/status")
+              state=$(echo "$statuses" | jq -r '
+                [.statuses[]? | select(.context == "CI / changes (pull_request)" or .context == "CI / checks (pull_request)" or .context == "CI / image (pull_request)" or .context == "Infrastructure / Plan and apply (pull_request)")]
+                | group_by(.context) | map(max_by(.updated_at))
+                | if any(.[]; .status == "failure" or .status == "error") then "failure"
+                  elif length == 4 and all(.[]; .status == "success") then "success" else "pending" end')
+              if [ "$state" = failure ]; then echo "Image pin PR $pr failed required checks"; exit 1; fi
+              if [ "$state" = success ]; then passed=true; break; fi
+              sleep 30
+            done
+            if [ "$passed" != true ]; then echo "Image pin PR $pr did not finish all required checks"; exit 1; fi
+            body=$(jq -n --arg head "$(git rev-parse HEAD)" '{Do:"squash",delete_branch_after_merge:true,head_commit_id:$head}')
+            printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- -H 'Content-Type: application/json' -d "$body" "$api/pulls/$pr/merge"
+          fi
+      - name: Publish validated source release on Forgejo
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+          VERSION: ${{ steps.homepage-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          body=$(jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" '{tag_name:$tag,target_commitish:$sha,name:$tag,body:("Validated homepage source at "+$sha+". Image pins pass repository and real container checks before merging.")}')
+          printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- -H 'Content-Type: application/json' -d "$body" "$api/releases"
