@@ -269,7 +269,7 @@ jobs:
           console.log("Homepage health, frontend assets and exact source SHA verified");'
         if: steps.scope.outputs.changed == 'true'
       - name: Propose and merge the checked image pin
-        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request' && !inputs.git_ref && github.ref == 'refs/heads/main'
         env:
           TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
         run: |
@@ -305,7 +305,7 @@ jobs:
             printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- -H 'Content-Type: application/json' -d "$body" "$api/pulls/$pr/merge"
           fi
       - name: Publish validated source release on Forgejo
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && !inputs.git_ref && github.ref == 'refs/heads/main'
         env:
           TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
           VERSION: ${{ steps.homepage-version.outputs.version }}
