@@ -6,9 +6,9 @@ usage() {
   cat >&2 <<'EOF'
 usage: image-fingerprint.sh --image NAME --dockerfile PATH --context PATH --paths "PATH [PATH ...]"
 
-Computes a stable image-input fingerprint from files, Docker build metadata,
-and resolved base image digests. Writes fingerprint, proof_tag, and proof_ref
-to $GITHUB_OUTPUT when present.
+Computes a stable image-input fingerprint from files and Docker build metadata.
+The Dockerfile pins its base images by digest, so its hash covers them. Writes
+fingerprint, proof_tag, and proof_ref to $GITHUB_OUTPUT when present.
 EOF
 }
 
@@ -18,7 +18,6 @@ context=""
 paths=""
 proof_repository="${PROOF_REPOSITORY:-my-homepage-build-proof}"
 registry_server="${REGISTRY_SERVER:-romainecr.azurecr.io}"
-include_base_digests="${INCLUDE_BASE_DIGESTS:-true}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,10 +44,6 @@ while [[ $# -gt 0 ]]; do
     --registry-server)
       registry_server="${2:-}"
       shift 2
-      ;;
-    --no-base-digests)
-      include_base_digests="false"
-      shift
       ;;
     -h|--help)
       usage
@@ -101,21 +96,6 @@ done
   printf 'buildx=docker/build-push-action@v6\n'
   sha256sum scripts/image-fingerprint.sh
 } >>"${manifest}"
-
-if [[ "${include_base_digests}" == "true" ]]; then
-  while IFS= read -r base_image; do
-    digest="$(docker buildx imagetools inspect "${base_image}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
-    printf 'base=%s@%s\n' "${base_image}" "${digest}" >>"${manifest}"
-  done < <(
-    awk '
-      BEGIN { IGNORECASE = 1 }
-      $1 == "FROM" {
-        image = $2
-        if (tolower(image) != "scratch") print image
-      }
-    ' "${dockerfile}" | sort -u
-  )
-fi
 
 fingerprint="$(sha256sum "${manifest}" | cut -d' ' -f1)"
 proof_tag="${image}-${fingerprint}"
