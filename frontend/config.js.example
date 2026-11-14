@@ -1,5 +1,5 @@
 // fztApiBase points at the fzt-frontend service that hosts /fzt/tree/:id.
-// homepageVersion is the short SHA of the build commit (or "dev" locally).
+// homepageVersion is the build's release version (or "dev" locally).
 // Both overridden at generate-config.sh time.
 export const CONFIG = {
   fztApiBase: "https://fzt-frontend.home.romaine.life",

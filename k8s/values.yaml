@@ -2,5 +2,5 @@
 # push to main (via `sed` on this file).
 image:
   repository: romainecr.azurecr.io/my-homepage
-  # Quoted on purpose: a bare SHA like 4255e97 is valid YAML scientific notation; keep the quotes.
+  # The release version CI built the image as (v1.0.N). Quoted so YAML always reads it as a string.
   tag: "f4ab7f5"

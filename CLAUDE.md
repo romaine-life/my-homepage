@@ -142,7 +142,7 @@ The legacy slug ids (`nelson-bookmarks`, `nelson-ea-bookmarks`, `nelson-menu`) a
 
 CI's `image` job (`.forgejo/workflows/ci.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser Forgejo release at build time — none committed to git. Every push to `main` runs it; it rebuilds when `frontend/`, `backend/`, the Dockerfile, `.dockerignore`, the fingerprint script or `ci.yml` changed. A new fzt-browser release does not auto-redeploy here: the next push to `main` that rebuilds the image picks it up. A manual dispatch of CI builds and publishes an image but does not pin or deploy it.
 
-The build writes `frontend/version.json` (containing the fzt-browser release version used) so the CI dashboard can see which version is live.
+The build writes `frontend/version.json` (the homepage's release version, the commit it was built from and the fzt-browser release version used) so the CI dashboard can see which version is live. The homepage version, the image tag and the release all come from one `actions/release-version` step (PIPT-7).
 
 ## Change Log
 

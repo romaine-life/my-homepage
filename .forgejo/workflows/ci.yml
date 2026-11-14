@@ -104,6 +104,13 @@ jobs:
 
           git checkout --detach "$full_sha"
           echo "Resolved ${target_ref} -> ${full_sha}"
+      # The one number the image, the page and the release carry (PIPT-7). A dispatch
+      # of another ref builds an unreleased version.
+      - id: version
+        uses: romaine-life/pipeline-templates/actions/release-version@main
+        with:
+          prefix: v1.0
+          publish: ${{ github.event_name != 'pull_request' && !inputs.git_ref && github.ref == 'refs/heads/main' }}
       - name: Check application image inputs
         id: scope
         env:
@@ -126,6 +133,7 @@ jobs:
         id: fzt-version
         env:
           TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           api="$GITHUB_SERVER_URL/api/v1/repos/romaine-life/fzt-browser"
@@ -137,26 +145,19 @@ jobs:
             test -s "frontend/$name"
           done
           echo "fzt_version=$version" >> "$GITHUB_OUTPUT"
-          printf '{"fztBrowser":"%s","sha":"%s","deployedAt":"%s"}\n' "$version" "$(git rev-parse HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > frontend/version.json
+          printf '{"fztBrowser":"%s","version":"%s","sha":"%s","deployedAt":"%s"}\n' "$version" "$VERSION" "$(git rev-parse HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > frontend/version.json
         if: steps.scope.outputs.changed == 'true'
       - name: Resolve image tag
         id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          TAG="$(git rev-parse --short=7 HEAD)"
-          echo "TAG=${TAG}" >> "$GITHUB_ENV"
-          echo "Built ref $(git rev-parse HEAD) as ${REGISTRY}/${IMAGE}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "TAG=${VERSION}" >> "$GITHUB_ENV"
+          echo "Built ref $(git rev-parse HEAD) as ${REGISTRY}/${IMAGE}:${VERSION}" >> "$GITHUB_STEP_SUMMARY"
         if: steps.scope.outputs.changed == 'true'
-      - name: Compute next homepage version
-        id: homepage-version
-        run: |
-          set -euo pipefail
-          git fetch --tags
-          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
-          if [ -z "$latest" ]; then next=v1.0.0; else next="${latest%.*}.$((${latest##*.} + 1))"; fi
-          echo "version=$next" >> "$GITHUB_OUTPUT"
       - name: Generate frontend/config.js
         env:
-          HOMEPAGE_VERSION: ${{ github.event_name == 'pull_request' && 'docker-build-check' || steps.homepage-version.outputs.version }}
+          HOMEPAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           chmod +x ./frontend/generate-config.sh
           ./frontend/generate-config.sh
@@ -255,17 +256,19 @@ jobs:
             if docker exec "$name" node -e 'fetch("http://127.0.0.1:3000/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then break; fi
             sleep 1
           done
-          docker exec -e EXPECTED_SHA="$(git rev-parse HEAD)" "$name" node --input-type=module -e '
+          docker exec -e EXPECTED_SHA="$(git rev-parse HEAD)" -e EXPECTED_VERSION="$TAG" "$name" node --input-type=module -e '
           import assert from "node:assert/strict";
           const base="http://127.0.0.1:3000";
           assert.equal((await (await fetch(base+"/health")).json()).status,"healthy");
-          assert.equal((await (await fetch(base+"/version.json")).json()).sha,process.env.EXPECTED_SHA);
+          const built=await (await fetch(base+"/version.json")).json();
+          assert.equal(built.sha,process.env.EXPECTED_SHA);
+          assert.equal(built.version,process.env.EXPECTED_VERSION);
           for (const [path,type] of [["/","text/html"],["/config.js","javascript"],["/fzt-terminal.js","javascript"],["/fzt-terminal.css","text/css"],["/fzt-web.js","javascript"]]) {
             const r=await fetch(base+path); assert.equal(r.status,200,path); assert.ok(r.headers.get("content-type").includes(type),path); assert.ok((await r.text()).length>0,path);
           }
           const wasm=Buffer.from(await (await fetch(base+"/fzt.wasm")).arrayBuffer());
           assert.equal(wasm.subarray(0,4).toString("hex"),"0061736d");
-          console.log("Homepage health, frontend assets and exact source SHA verified");'
+          console.log("Homepage health, frontend assets, version and exact source SHA verified");'
         if: steps.scope.outputs.changed == 'true'
       - name: Propose and merge the checked image pin
         if: steps.scope.outputs.changed == 'true' && github.event_name != 'pull_request' && !inputs.git_ref && github.ref == 'refs/heads/main'
@@ -304,12 +307,16 @@ jobs:
             printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- -H 'Content-Type: application/json' -d "$body" "$api/pulls/$pr/merge"
           fi
       - name: Publish validated source release on Forgejo
-        if: github.event_name != 'pull_request' && !inputs.git_ref && github.ref == 'refs/heads/main'
+        if: steps.version.outputs.tag != ''
         env:
           TOKEN: ${{ secrets.PIPELINE_DISPATCH_TOKEN }}
-          VERSION: ${{ steps.homepage-version.outputs.version }}
+          VERSION: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
+          # A re-run of a released commit keeps its number and release.
+          code=$(printf 'Authorization: token %s\n' "$TOKEN" | curl -sS -o /dev/null -w '%{http_code}' --header @- "$api/releases/tags/$VERSION")
+          if [ "$code" = 200 ]; then echo "$VERSION is already released"; exit 0; fi
+          [ "$code" = 404 ] || { echo "::error::release lookup for $VERSION returned HTTP $code"; exit 1; }
           body=$(jq -n --arg tag "$VERSION" --arg sha "$GITHUB_SHA" '{tag_name:$tag,target_commitish:$sha,name:$tag,body:("Validated homepage source at "+$sha+". Image pins pass repository and real container checks before merging.")}')
           printf 'Authorization: token %s\n' "$TOKEN" | curl --fail-with-body -sS --header @- -H 'Content-Type: application/json' -d "$body" "$api/releases"
