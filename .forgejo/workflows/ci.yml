@@ -48,10 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: opentofu/setup-opentofu@v2
+      - uses: romaine-life/pipeline-templates/actions/setup-opentofu@main
         with:
-          tofu_version: 1.11.0
-          tofu_wrapper: false
+          tofu-version: 1.11.0
       - name: Repository naming, newline and format checks
         run: |
           set -euo pipefail
