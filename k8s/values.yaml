@@ -3,4 +3,4 @@
 image:
   repository: romainecr.azurecr.io/my-homepage
   # The release version CI built the image as (v1.0.N). Quoted so YAML always reads it as a string.
-  tag: "f4ab7f5"
+  tag: "v1.0.53"
