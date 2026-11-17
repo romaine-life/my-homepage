@@ -12,7 +12,7 @@ pins and deploys an image.
 
 ## Auth
 
-Browser auth is handled by `auth.romaine.life`. Anonymous users see the normal playground tree with one `Login` leaf that opens `https://auth.romaine.life/sign-in/microsoft?callbackURL=<homepage>`. After the auth redirect returns to homepage, `frontend/auth.js` calls `https://auth.romaine.life/api/auth/token` with `credentials: include` and uses the returned JWT as the Bearer token for `fzt-frontend.home.romaine.life`.
+Browser auth is handled by `auth.romaine.life`. A browser that has signed in before shows its saved bookmarks (`cached_bookmarks`) on every load whether or not auth answers: without a session they are read-only, the title bar says so, and `:login` signs in. auth.romaine.life is needed only to sync or edit (it is unreachable on networks whose DNS filter blocks it). A browser with no saved bookmarks and no session sees the normal playground tree with one `Login` leaf that opens `https://auth.romaine.life/sign-in/microsoft?callbackURL=<homepage>`. After the auth redirect returns to homepage, `frontend/auth.js` calls `https://auth.romaine.life/api/auth/token` with `credentials: include` and uses the returned JWT as the Bearer token for `fzt-frontend.home.romaine.life`.
 
 - **Bookmark tree id = the JWT `sub`**: the tree is `<sub>-bookmarks`, derived directly from the auth.romaine.life token's opaque `sub`. No email->slug mapping, no human-readable slugs. Personal (`nelson@romaine.life`) → `e23pPWiNAUSAEMsxU6yEWrIiD2TnxZDf-bookmarks`; Engineered Arts (`n.romaine@engineeredarts.com`) → `i9ac64Hmr3yLKIvEr6BYSLBN64OVCU1M-bookmarks`. The visitor "switches profile" by signing in as the corresponding Microsoft account.
 - **No legacy token path**: the `#token=` / `localStorage['homepage_jwt']` terminal-mint fallback was deleted (auth.romaine.life migration). The only token source is `GET auth.romaine.life/api/auth/token` (cookie-attached).
@@ -29,7 +29,7 @@ Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree
 - **Unified tree+search**: fzt starts in search mode (typing fills query, fzt.init kicks it off). Two explicit modes — search (magnifying-glass prompt, typing fills query) and normal (arrow prompt, cursor on tree, lowercase hjkl nav). Arrow keys or `` ` `` (backtick) enter normal mode; `/` returns to search preserving query, Backspace returns chopping the last query char. Enter, Right, and Space on a folder push scope; Shift+Enter universally commits the cursor's item. See `fzt-terminal/CLAUDE.md` "Keyboard model" for the canonical rule.
 - **Scope as breadcrumb**: Enter, Right, Tab, or Space on a folder pushes scope. The folder name appears as greyed-out locked text in the prompt. Backspace/Escape on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
 - **Unified prompt rendering**: Within `drawUnified`, `navMode` affects ONLY the prompt icon (arrow vs magnifying glass). All other rendering — breadcrumb, content area, cursor visibility, top match highlighting — is mode-independent, driven by `treeCursor`, `query`, `scope`, and `searchActive` state.
-- **`:` palette commands**: Public commands are registered after WASM init; authenticated commands are registered via `fzt.addCommands()` only after `checkAuth` returns true. Current public entry: `ambience mode` (fade out homepage chrome and show only the ambience canvas until Escape). Current authenticated entries: `sync` (in-tab re-fetch via `triggerManualSync` → shows dot on diff, title-bar status otherwise; action string is `refresh` to dodge fzt-frontend's filesystem-backed `sync`), `edit` (enter HTML tree editor), `logout` (clear JWT + reload), `copy yaml` / `paste yaml` (round-trip the tree through the clipboard).
+- **`:` palette commands**: Public commands are registered after WASM init; authenticated commands are registered via `fzt.addCommands()` only after `checkAuth` returns true. Current public entry: `ambience mode` (fade out homepage chrome and show only the ambience canvas until Escape). With saved bookmarks and no session: `login` (open auth.romaine.life sign-in). Current authenticated entries: `sync` (in-tab re-fetch via `triggerManualSync` → shows dot on diff, title-bar status otherwise; action string is `refresh` to dodge fzt-frontend's filesystem-backed `sync`), `edit` (enter HTML tree editor), `logout` (clear the saved bookmarks and the session, then reload), `copy yaml` / `paste yaml` (round-trip the tree through the clipboard).
 - **Sync indicator + diff modal**: When the detached `fetchBookmarks()` on page load finds fresh data that differs from `currentBookmarks`, `pendingBookmarks` is stashed and a green dot appears (bottom-right). Clicking the dot opens a modal showing a git-style unified diff (hand-rolled LCS over YAML lines, Catppuccin +/−/ context coloring, DOS font) with Apply / Cancel buttons; Escape and overlay-click cancel. Apply swaps the tree in and runs `loadFzhBookmarks`. Bookmark `description:` fields round-trip through `bookmarksToYaml` + `cleanBookmarks` so description edits show up in the diff.
 - **Click support**: Row `<div>` click handlers call `fzt.clickRow(row)` — fzt maps the visual row to a tree item. Folders push scope, leaves return URLs for navigation.
 - **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.init(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
@@ -93,12 +93,13 @@ Refs enable shared bookmarks across identities. A tree node can be `{ ref: "<ns>
 
 Cache-first rendering with non-blocking background sync. The user sees bookmarks instantly from localStorage; fresh data loads silently.
 
-1. Load `cached_bookmarks` from localStorage, render immediately in fzt
-2. `fetchBookmarks()` fires as a detached promise (non-blocking)
+1. Load `cached_bookmarks` from localStorage, render immediately in fzt, before and regardless of the auth check
+2. With a session, `fetchBookmarks()` fires as a detached promise (non-blocking)
 3. If fresh data differs from cache: stash in `pendingBookmarks`, show green sync indicator (bottom-right dot)
 4. User clicks indicator -> `applySyncedBookmarks()` swaps in fresh data
 5. First-time users (no cache): background fetch applies directly
 6. Offline: catch swallows the error, cache is fine
+7. No session (auth unreachable or signed out): the cache stays on screen read-only; nothing is fetched
 
 After a save, `pendingBookmarks` is cleared and the indicator hidden to prevent stale state.
 

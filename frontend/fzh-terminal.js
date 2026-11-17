@@ -57,8 +57,7 @@ export async function initFzhTerminal(containerEl) {
 export function registerCommands() {
   if (!_term || !_term.isReady()) return;
   _term.addCommands([
-    { name: "ambience mode", description: "Hide homepage and show ambience", action: "ambience-mode" },
-    { name: "settings ambience background", description: "Toggle ambience background on load", action: "toggle-ambience-background" },
+    ...PUBLIC_COMMANDS,
     { name: "sync", description: "Check cloud for new bookmarks", action: "refresh" },
     { name: "edit", description: "Edit bookmark tree", action: "edit" },
     { name: "logout", description: "Log out", action: "logout" },
@@ -67,11 +66,23 @@ export function registerCommands() {
   ]);
 }
 
+// Each addCommands call replaces the palette's list, so every list carries
+// the public entries.
+const PUBLIC_COMMANDS = [
+  { name: "ambience mode", description: "Hide homepage and show ambience", action: "ambience-mode" },
+  { name: "settings ambience background", description: "Toggle ambience background on load", action: "toggle-ambience-background" },
+];
+
 export function registerPublicCommands() {
   if (!_term || !_term.isReady()) return;
+  _term.addCommands(PUBLIC_COMMANDS);
+}
+
+export function registerSignedOutCommands() {
+  if (!_term || !_term.isReady()) return;
   _term.addCommands([
-    { name: "ambience mode", description: "Hide homepage and show ambience", action: "ambience-mode" },
-    { name: "settings ambience background", description: "Toggle ambience background on load", action: "toggle-ambience-background" },
+    ...PUBLIC_COMMANDS,
+    { name: "login", description: "Sign in to sync and edit bookmarks", action: "login" },
   ]);
 }
 

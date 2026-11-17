@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchWhoami, authHeader, loginBookmark } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus, enterPromptMode as enterFzhPromptMode } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, registerSignedOutCommands as registerFzhSignedOutCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus, enterPromptMode as enterFzhPromptMode } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -144,7 +144,10 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       enterAmbienceMode();
     } else if (action === "toggle-ambience-background") {
       toggleAmbienceBackground();
+    } else if (action === "login") {
+      openBookmarkUrl(loginBookmark().url);
     } else if (action === "logout") {
+      clearCachedBookmarks();
       logout();
     } else if (action === "copy-yaml") {
       const yaml = bookmarksToYaml(currentBookmarks);
@@ -179,23 +182,30 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
     }
   });
 
+  // A browser that has signed in before shows its saved bookmarks without
+  // waiting on the auth check: auth.romaine.life is only needed to sync or
+  // edit, and can be unreachable (a network that filters it) or expired.
+  // fzt reads the : palette only when bookmarks load, so a load that beats the
+  // auth check is redone once it settles, with that session's commands.
   const cached = loadCachedBookmarks();
+  let authSettled = false;
+  const authCheck = checkAuth().finally(() => { authSettled = true; });
+  if (cached) {
+    currentBookmarks = cached;
+    fzhReady.then(() => { if (!authSettled) loadFzhBookmarks(cached); });
+  }
 
-  if (await checkAuth()) {
+  if (await authCheck) {
     userAuthenticated = true;
     playgroundMode = false;
 
     // Register the : palette commands only after auth confirms — otherwise
     // edit/logout/copy/paste would appear for playground visitors with no
     // session to operate on.
-    fzhReady.then(() => registerFzhCommands());
-
-    // Load from cache immediately — no blocking network call, works offline
-    const cached = loadCachedBookmarks();
-    if (cached) {
-      currentBookmarks = cached;
-      fzhReady.then(() => loadFzhBookmarks(cached));
-    }
+    fzhReady.then(() => {
+      registerFzhCommands();
+      if (cached) loadFzhBookmarks(currentBookmarks);
+    });
 
     // Background fetch — silently check for updates without blocking fzt
     fetchBookmarks().then(fresh => {
@@ -218,6 +228,13 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       if (user?.name || user?.email) {
         fzhReady.then(() => setFzhIdentity(user.name || user.email));
       }
+    });
+  } else if (cached) {
+    // Saved bookmarks without a session: read-only until :login.
+    fzhReady.then(() => {
+      registerFzhSignedOutCommands();
+      loadFzhBookmarks(currentBookmarks);
+      setFzhStatus("Not signed in: saved bookmarks, :login to sync", 3);
     });
   } else {
     // Playground mode — no auth, local-only bookmarks
@@ -413,6 +430,10 @@ function saveCachedBookmarks(bookmarks) {
   } catch {
     // Storage full or unavailable — non-critical
   }
+}
+
+function clearCachedBookmarks() {
+  try { localStorage.removeItem(CACHE_KEY); } catch { /* non-critical */ }
 }
 
 function bookmarksEqual(a, b) {
