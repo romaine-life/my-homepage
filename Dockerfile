@@ -12,11 +12,22 @@ WORKDIR /app
 # Install backend deps first (cache layer — only invalidated on lockfile change).
 COPY backend/package*.json backend/
 ARG NPM_CONFIG_REGISTRY=https://artifacts.home.romaine.life/npm/npm/
-RUN cd backend && npm install --omit=dev
+RUN cd backend && npm ci --omit=dev
 
 # Bring the backend source and the static frontend into the runtime image.
 COPY backend/ backend/
 COPY frontend/ frontend/
+# config.js names the release the suite builds the image as (a PR build has none), and the
+# self-test checks it does.
+ARG APP_VERSION=dev
+ARG SOURCE_SHA=unknown
+ENV APP_VERSION=$APP_VERSION SOURCE_SHA=$SOURCE_SHA
+RUN HOMEPAGE_VERSION="$APP_VERSION" sh frontend/generate-config.sh
+# version.json, for the CI dashboard: this release, its commit and the pinned fzt-browser.
+COPY dependencies.lock /tmp/dependencies.lock
+RUN fzt=$(awk '$1 == "frontend/fzt.wasm" { print $2 }' /tmp/dependencies.lock) && \
+    printf '{"fztBrowser":"%s","version":"%s","sha":"%s","deployedAt":"%s"}\n' "$fzt" "$APP_VERSION" "$SOURCE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > frontend/version.json && \
+    rm /tmp/dependencies.lock
 
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001 && \
@@ -28,4 +39,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-CMD ["node", "backend/server.js"]
+# An entrypoint, so the image check's `--self-test` reaches the server.
+ENTRYPOINT ["node", "backend/server.js"]

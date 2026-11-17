@@ -23,7 +23,7 @@ spec:
       serviceAccountName: infra-shared
       containers:
         - name: my-homepage
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ .Values.image | quote }}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

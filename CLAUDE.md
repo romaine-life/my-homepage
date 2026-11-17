@@ -5,10 +5,10 @@ Bookmark manager web app hosted at homepage.romaine.life.
 ## Container Build Verification
 
 Agent pods are not expected to have Docker. Do not report missing local Docker
-as a blocker. Run available repo checks first, then use PR CI as the normal
-container build gate: on a pull request, the `image` job in `.forgejo/workflows/ci.yml`
-builds and smoke-tests the image with `push: false`. Pushes to `main` and manual
-dispatches of CI publish the image; only a push to `main` pins and deploys it.
+as a blocker. Run available repo checks first (`ci-check` runs the suites' local
+checks), then use PR CI as the container build gate: the web-app suite builds the
+image and runs its `--self-test` on a pull request. Only a merge to `main` publishes,
+pins and deploys an image.
 
 ## Auth
 
@@ -50,7 +50,7 @@ Uses the shared auto-init client from the `ambience` repo, served from our OWN o
 
 - **Vendored runtime, not runtime-loaded**: `frontend/ambience/` holds a pinned snapshot fetched from `ambience.romaine.life` — `sim.js`, `client.js`, `wasm_runtime.js`, `wasm_exec.js`, and the FULL all-effects `ambience.wasm` (committed; ~6.5 MB), plus `manifest.json` recording the pinned sizes. `index.html` loads `/ambience/sim.js` + `/ambience/client.js` and sets `data-ambience-wasm-url` / `-wasm-exec-url` / `-runtime-url` on the canvas to the vendored copies, so NOTHING about the runtime is fetched from ambience's origin at page load — only the SSE stream (`/events`, `/snapshot`) points there. This replaced the old frozen `ambience-sim.js` / `ambience-client.js` copies, which were an ancient era (10 Hz / 200×100) that desynced against the current 60 Hz / 320×180 authority and mis-rendered effects.
 - **Full wasm, not rain-scoped**: homepage subscribes to ambience's DEFAULT rotating world (bare paths), which can broadcast ANY effect — so it vendors `ambience.wasm` (all effects), unlike chess-tactics which vendors the rain-only `ambience-rain.wasm` for its single-effect `/chess` world. The connect-time capability handshake (`servedEffects` in each snapshot; client asserts `AmbienceSim.effects[name]` exists for each) fails loudly rather than mis-rendering if the vendored build ever drifts from what the world serves.
-- **Re-vendoring**: run `npm --prefix frontend run vendor:ambience` (optionally `AMBIENCE_BASE=…` for a non-prod origin) after ambience ships a new client version, then commit the updated `frontend/ambience/`. The image fingerprint path list in `ci.yml` includes the `frontend/ambience` directory, so a re-vendor triggers a rebuild.
+- **Re-vendoring**: run `npm --prefix frontend run vendor:ambience` (optionally `AMBIENCE_BASE=…` for a non-prod origin) after ambience ships a new client version, then commit the updated `frontend/ambience/`. A re-vendor changes `frontend/`, so its merge releases a new image.
 - **Graceful absence**: if the vendored client fails to load, `body.ambience-on` is never set and the terminal keeps its Catppuccin bg — no broken render path.
 
 ## Storage
@@ -140,9 +140,9 @@ The legacy slug ids (`nelson-bookmarks`, `nelson-ea-bookmarks`, `nelson-menu`) a
 
 ## fzt Deploy Pipeline
 
-CI's `image` job (`.forgejo/workflows/ci.yml`) downloads `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, and `fzt-web.js` from the latest fzt-browser Forgejo release at build time — none committed to git. Every push to `main` runs it; it rebuilds when `frontend/`, `backend/`, the Dockerfile, `.dockerignore`, the fingerprint script or `ci.yml` changed. A new fzt-browser release does not auto-redeploy here: the next push to `main` that rebuilds the image picks it up. A manual dispatch of CI builds and publishes an image but does not pin or deploy it.
+CI comes from pipeline-templates' suites (its `fleet.json` entry). `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css` and `fzt-web.js` come from the fzt-browser release `dependencies.lock` pins by tag and checksum (none committed to git), which the image build stages exactly. Each fzt-browser release opens a take-up PR moving the pin; merge-queue lands it, and that merge releases a new homepage image with its pin PR.
 
-The build writes `frontend/version.json` (the homepage's release version, the commit it was built from and the fzt-browser release version used) so the CI dashboard can see which version is live. The homepage version, the image tag and the release all come from one `actions/release-version` step (PIPT-7).
+The image build writes `frontend/version.json` (the homepage's release version, the commit it was built from and the pinned fzt-browser release) so the CI dashboard can see which version is live.
 
 ## Change Log
 
