@@ -10,9 +10,11 @@ FROM artifacts.home.romaine.life/dockerhub/library/node:20-alpine@sha256:fb4cd12
 WORKDIR /app
 
 # Install backend deps first (cache layer — only invalidated on lockfile change).
-COPY backend/package*.json backend/
+# fzt-browser's files are the npm package @romaine-life/fzt-browser, which the backend serves,
+# read with CI's sign-in for Forgejo's packages (PIPT-32).
+COPY backend/package*.json backend/.npmrc backend/
 ARG NPM_CONFIG_REGISTRY=https://artifacts.home.romaine.life/npm/npm/
-RUN cd backend && npm ci --omit=dev
+RUN --mount=type=secret,id=FORGEJO_PACKAGES_TOKEN,env=FORGEJO_PACKAGES_TOKEN cd backend && npm ci --omit=dev
 
 # Bring the backend source and the static frontend into the runtime image.
 COPY backend/ backend/
@@ -23,11 +25,9 @@ ARG APP_VERSION=dev
 ARG SOURCE_SHA=unknown
 ENV APP_VERSION=$APP_VERSION SOURCE_SHA=$SOURCE_SHA
 RUN HOMEPAGE_VERSION="$APP_VERSION" sh frontend/generate-config.sh
-# version.json, for the CI dashboard: this release, its commit and the pinned fzt-browser.
-COPY dependencies.lock /tmp/dependencies.lock
-RUN fzt=$(awk '$1 == "frontend/fzt.wasm" { print $2 }' /tmp/dependencies.lock) && \
-    printf '{"fztBrowser":"%s","version":"%s","sha":"%s","deployedAt":"%s"}\n' "$fzt" "$APP_VERSION" "$SOURCE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > frontend/version.json && \
-    rm /tmp/dependencies.lock
+# version.json, for the CI dashboard: this release, its commit and fzt-browser's release.
+RUN fzt=v$(node -p "require('./backend/node_modules/@romaine-life/fzt-browser/package.json').version") && \
+    printf '{"fztBrowser":"%s","version":"%s","sha":"%s","deployedAt":"%s"}\n' "$fzt" "$APP_VERSION" "$SOURCE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > frontend/version.json
 
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001 && \

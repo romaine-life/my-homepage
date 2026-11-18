@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Per-app backend for homepage.romaine.life \u2014 serves the static frontend, no server-side logic.",
+  "description": "Per-app backend for homepage.romaine.life — serves the static frontend, no server-side logic.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,6 +13,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@romaine-life/fzt-browser": "0.1.117",
     "express": "^5.2.1",
     "morgan": "^1.12.0"
   },

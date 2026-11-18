@@ -36,7 +36,7 @@ Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree
 - **Keyboard routing**: All keys forwarded to fzt by default. Forwarding stops when `editMode` is active or focus is in an input/textarea/select.
 - **Edit mode**: Swaps from fzt terminal to HTML tree editor (existing click-based UI, full-width). Save/cancel returns to fzt. `Shift+Enter` saves all edits (no inline form open); per-bookmark Enter confirms individual edits.
 - **Modifier policy**: Shift is the only modifier — no Ctrl, Alt, or Meta bindings anywhere. See `fzt-terminal/CLAUDE.md` "Modifier policy" for the full rule and rationale.
-- **Shared assets**: `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js` — all downloaded from fzt-browser releases at deploy time (gitignored). `fzt-web.js` provides built-in Catppuccin Mocha palette, DOS font stack, and cursor config. `fzh-terminal.js` is a thin app-specific wrapper that only overrides `containerPadding` and `defaultCursorPos`.
+- **Shared assets**: `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js` — fzt-browser's npm package `@romaine-life/fzt-browser` (in `backend/package.json`), which the backend serves at the site root. `fzt-web.js` provides built-in Catppuccin Mocha palette, DOS font stack, and cursor config. `fzh-terminal.js` is a thin app-specific wrapper that only overrides `containerPadding` and `defaultCursorPos`.
 - **CRT visual style**: Shared `fzt-terminal.css` provides scanlines, vignette, rounded corners, and cursor blink. CSS variables `--fzt-bg: #181825` and `--fzt-fg: #cdd6f4` override the defaults for Catppuccin theming. DOS font (Perfect DOS VGA 437) with font-smoothing disabled.
 - **Fonts**: `PerfectDOSVGA437.ttf` (primary terminal font), `SymbolsNerdFontMono-Regular.ttf` (nerd font icons)
 - **Script load order**: `wasm_exec.js` → `script.js` (module). `wasm_exec.js` must load before ES modules since it defines the global `Go` constructor.
@@ -141,7 +141,7 @@ The legacy slug ids (`nelson-bookmarks`, `nelson-ea-bookmarks`, `nelson-menu`) a
 
 ## fzt Deploy Pipeline
 
-CI comes from pipeline-templates' suites (its `fleet.json` entry). `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css` and `fzt-web.js` come from the fzt-browser release `dependencies.lock` pins by tag and checksum (none committed to git), which the image build stages exactly. Each fzt-browser release opens a take-up PR moving the pin; merge-queue lands it, and that merge releases a new homepage image with its pin PR.
+CI comes from pipeline-templates' suites (its `fleet.json` entry). `fzt.wasm`, `fzt-terminal.js`, `fzt-terminal.css` and `fzt-web.js` come from the npm package `@romaine-life/fzt-browser` on Forgejo's registry, pinned exactly in `backend/package.json` and read with CI's sign-in (pipeline-templates `suites/README.md`, npm packages on Forgejo). Each fzt-browser release opens a take-up PR moving the version; merge-queue lands it, and that merge releases a new homepage image with its pin PR.
 
 The image build writes `frontend/version.json` (the homepage's release version, the commit it was built from and the pinned fzt-browser release) so the CI dashboard can see which version is live.
 

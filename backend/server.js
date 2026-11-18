@@ -7,6 +7,7 @@
 // fzt-frontend — uniform Dockerfile base, port, probes, and log shape.
 import express from 'express';
 import morgan from 'morgan';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +23,12 @@ app.get('/health', (_req, res) => res.json({ status: 'healthy' }));
 
 app.use(express.static(FRONTEND_DIR));
 
+// fzt-browser's built files, from its npm package (PIPT-32).
+const FZT_DIR = path.join(path.dirname(createRequire(import.meta.url).resolve('@romaine-life/fzt-browser/package.json')), 'dist');
+for (const file of ['fzt.wasm', 'fzt-terminal.js', 'fzt-terminal.css', 'fzt-web.js']) {
+  app.get(`/${file}`, (_req, res) => res.sendFile(file, { root: FZT_DIR }));
+}
+
 // SPA fallback. The app uses history.replaceState rather than client routing,
 // but the fallback keeps deep URLs safe. Express 5 dropped the bare `*` route
 // pattern, so use a regex.
@@ -30,11 +37,11 @@ app.get(/.*/, (_req, res) => {
 });
 
 // The image's self-test (`--self-test`, run read-only by the web-app suite's image check): the
-// page, its generated config naming this release, and the fzt-browser assets, each answering
-// with its own content type, and the wasm a real WebAssembly module. `--source` checks only what
-// the repo itself serves, for the backend's own test.
-const SOURCE_ROUTES = [['/', 'text/html'], ['/style.css', 'text/css'], ['/script.js', 'javascript']];
-const BUILT_ROUTES = [['/config.js', 'javascript'], ['/fzt-terminal.js', 'javascript'], ['/fzt-terminal.css', 'text/css'], ['/fzt-web.js', 'javascript']];
+// page, the fzt-browser package's files and its generated config naming this release, each
+// answering with its own content type, and the wasm a real WebAssembly module. `--source` checks
+// only what the repo itself serves, its packages included, for the backend's own test.
+const SOURCE_ROUTES = [['/', 'text/html'], ['/style.css', 'text/css'], ['/script.js', 'javascript'], ['/fzt-terminal.js', 'javascript'], ['/fzt-terminal.css', 'text/css'], ['/fzt-web.js', 'javascript']];
+const BUILT_ROUTES = [['/config.js', 'javascript']];
 
 async function selfTest(built) {
   const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
@@ -57,9 +64,9 @@ async function selfTest(built) {
       if (version.version !== process.env.APP_VERSION || version.sha !== process.env.SOURCE_SHA || !version.fztBrowser) {
         throw new Error(`version.json names ${JSON.stringify(version)}, not this image`);
       }
-      const wasm = Buffer.from(await (await fetch(`${base}/fzt.wasm`)).arrayBuffer());
-      if (wasm.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('fzt.wasm is not a WebAssembly module');
     }
+    const wasm = Buffer.from(await (await fetch(`${base}/fzt.wasm`)).arrayBuffer());
+    if (wasm.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('fzt.wasm is not a WebAssembly module');
   } finally {
     server.closeAllConnections();
     server.close();
