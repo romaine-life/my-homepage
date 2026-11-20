@@ -1,2 +1,2 @@
 # The image by release tag and digest, rewritten by the suite's pin PR on each release.
-image: romainecr.azurecr.io/my-homepage:v1.0.67@sha256:a5903d6febf92861a7fd1cb2c40738056b1d714c21020b60d70fbd33ac70b92b
+image: romainecr.azurecr.io/my-homepage:v1.0.68@sha256:11a8014e798ab602fa6ace6f41555b9bf0c002170ab4c2e8e67c27258e58ccf1
