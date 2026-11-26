@@ -6,10 +6,10 @@
 // house-hunt, investing, kill-me, plant-agent, llm-explorer, diagrams,
 // fzt-frontend — uniform Dockerfile base, port, probes, and log shape.
 import express from 'express';
-import morgan from 'morgan';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { errorText, log, requestLog } from './log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
@@ -17,7 +17,7 @@ const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(morgan('combined'));
+app.use(requestLog());
 
 app.get('/health', (_req, res) => res.json({ status: 'healthy' }));
 
@@ -71,15 +71,15 @@ async function selfTest(built) {
     server.closeAllConnections();
     server.close();
   }
-  console.log(`[my-homepage] self-test passed${built ? '' : ' (source routes)'}`);
+  log.info('my-homepage self-test passed', { routes: built ? 'built' : 'source' });
 }
 
 if (process.argv.includes('--self-test')) {
   // Its result is the exit code; nothing is left open, so the process then ends.
   selfTest(!process.argv.includes('--source')).catch((error) => {
-    console.error(`[my-homepage] self-test failed: ${error.message}`);
+    log.error('my-homepage self-test failed', { error: errorText(error, { stack: false }) });
     process.exitCode = 1;
   });
 } else {
-  app.listen(PORT, () => console.log(`[my-homepage] ready on port ${PORT}`));
+  app.listen(PORT, () => log.info('my-homepage ready', { port: PORT }));
 }
