@@ -13,7 +13,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@romaine-life/fzt-browser": "0.1.148",
+    "@romaine-life/fzt-browser": "0.1.149",
     "express": "^5.2.1",
     "morgan": "^1.12.0"
   },
