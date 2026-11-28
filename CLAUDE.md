@@ -30,7 +30,7 @@ Cross-repo references: scoring engine in `fzt/core/scorer.go` and `fzt/core/tree
 - **Scope as breadcrumb**: Enter, Right, Tab, or Space on a folder pushes scope. The folder name appears as greyed-out locked text in the prompt. Backspace/Escape on empty query pops scope. The tree expands the scoped folder in place — full hierarchy stays visible.
 - **Unified prompt rendering**: Within `drawUnified`, `navMode` affects ONLY the prompt icon (arrow vs magnifying glass). All other rendering — breadcrumb, content area, cursor visibility, top match highlighting — is mode-independent, driven by `treeCursor`, `query`, `scope`, and `searchActive` state.
 - **`:` palette commands**: Public commands are registered after WASM init; authenticated commands are registered via `fzt.addCommands()` only after `checkAuth` returns true. Current public entry: `ambience mode` (fade out homepage chrome and show only the ambience canvas until Escape). With saved bookmarks and no session: `login` (open auth.romaine.life sign-in). Current authenticated entries: `sync` (in-tab re-fetch via `triggerManualSync` → shows dot on diff, title-bar status otherwise; action string is `refresh` to dodge fzt-frontend's filesystem-backed `sync`), `edit` (enter HTML tree editor), `logout` (clear the saved bookmarks and the session, then reload), `copy yaml` / `paste yaml` (round-trip the tree through the clipboard).
-- **Sync indicator + diff modal**: When the detached `fetchBookmarks()` on page load finds fresh data that differs from `currentBookmarks`, `pendingBookmarks` is stashed and a green dot appears (bottom-right). Clicking the dot opens a modal showing a git-style unified diff (hand-rolled LCS over YAML lines, Catppuccin +/−/ context coloring, DOS font) with Apply / Cancel buttons; Escape and overlay-click cancel. Apply swaps the tree in and runs `loadFzhBookmarks`. Bookmark `description:` fields round-trip through `bookmarksToYaml` + `cleanBookmarks` so description edits show up in the diff.
+- **Sync indicator + diff modal**: Fresh data that differs from `currentBookmarks` is swapped in automatically when the terminal is idle (see Background Fetch Model). Only while something would be lost is it stashed in `pendingBookmarks` behind a green dot (bottom-right), and it goes in the moment that ends. Clicking the dot opens a modal showing a git-style unified diff (hand-rolled LCS over YAML lines, Catppuccin +/−/ context coloring, DOS font) with Apply / Cancel buttons; Escape and overlay-click cancel. Apply swaps the tree in and runs `loadFzhBookmarks`. Bookmark `description:` fields round-trip through `bookmarksToYaml` + `cleanBookmarks` so description edits show up in the diff.
 - **Click support**: Row `<div>` click handlers call `fzt.clickRow(row)` — fzt maps the visual row to a tree item. Folders push scope, leaves return URLs for navigation.
 - **Data flow**: `bookmarks JSON → bookmarksToYaml() → fzt.loadYAML() → fzt.init(cols, rows)` — returns ANSI frames; `fzt.handleKey()` on each keystroke; `fzt.clickRow()` on mouse clicks
 - **Keyboard routing**: All keys forwarded to fzt by default. Forwarding stops when `editMode` is active or focus is in an input/textarea/select.
@@ -94,12 +94,13 @@ Refs enable shared bookmarks across identities. A tree node can be `{ ref: "<ns>
 Cache-first rendering with non-blocking background sync. The user sees bookmarks instantly from localStorage; fresh data loads silently.
 
 1. Load `cached_bookmarks` from localStorage, render immediately in fzt, before and regardless of the auth check
-2. With a session, `fetchBookmarks()` fires as a detached promise (non-blocking)
-3. If fresh data differs from cache: stash in `pendingBookmarks`, show green sync indicator (bottom-right dot)
-4. User clicks indicator -> `applySyncedBookmarks()` swaps in fresh data
-5. First-time users (no cache): background fetch applies directly
-6. Offline: catch swallows the error, cache is fine
-7. No session (auth unreachable or signed out): the cache stays on screen read-only; nothing is fetched
+2. With a session, `refreshFromServer()` re-reads the tree in the background: at page load, whenever the tab becomes visible or focused, and every 30 s while visible (MYHO-2). It uses `fetchTreeStrict()`, which returns null on a 401 or an outage, so a lapsed session never reads as an empty list
+3. If the tree differs from what is on screen and the terminal is idle (`isIdle()` in `fzh-terminal.js`: empty query, no scope, no prompt mode or `/` pop-up), `applySyncedBookmarks()` swaps it in at once
+4. Otherwise (typing, scoped, edit mode, diff modal open) it waits in `pendingBookmarks` behind the green dot; a 1 s check applies it as soon as the terminal is idle again, and the dot still opens the diff for an early look
+5. Edit mode is never refreshed underneath: it holds the merge base (`lastFetchedVersion` / `originalBookmarks`) for its save. Entering edit mode applies any pending tree first, so edits start from the version `lastFetchedVersion` names
+6. A read older than the version already held (a save landed mid-read) is dropped
+7. First-time users (no cache): background fetch applies directly
+8. No session (auth unreachable or signed out): the cache stays on screen read-only; nothing is fetched
 
 After a save, `pendingBookmarks` is cleared and the indicator hidden to prevent stale state.
 

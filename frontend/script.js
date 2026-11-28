@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { logout, checkAuth, fetchWhoami, authHeader, loginBookmark } from './auth.js';
-import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, registerSignedOutCommands as registerFzhSignedOutCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus, enterPromptMode as enterFzhPromptMode } from './fzh-terminal.js';
+import { initFzhTerminal, loadBookmarks as loadFzhBookmarks, setEditMode, setActive as setTerminalActive, onAction as onTerminalAction, isTerminalReady, setIdentity as setFzhIdentity, registerCommands as registerFzhCommands, registerPublicCommands as registerFzhPublicCommands, registerSignedOutCommands as registerFzhSignedOutCommands, setStatus as setFzhStatus, clearStatus as clearFzhStatus, enterPromptMode as enterFzhPromptMode, isIdle as isFzhIdle } from './fzh-terminal.js';
 
 // ── DOM references ──────────────────────────────────────────────
 const tree = document.getElementById("tree");
@@ -207,20 +207,21 @@ if (["localhost", "127.0.0.1"].includes(location.hostname)) {
       if (cached) loadFzhBookmarks(currentBookmarks);
     });
 
-    // Background fetch — silently check for updates without blocking fzt
-    fetchBookmarks().then(fresh => {
-      if (!fresh) return;
-      saveCachedBookmarks(fresh);
-      if (!cached) {
-        // First load with no cache — apply directly
+    if (cached) {
+      // The cache is on screen; the server's copy replaces it in the
+      // background once nothing typed would be lost.
+      refreshFromServer();
+    } else {
+      // First load with no cache — apply directly
+      fetchBookmarks().then(fresh => {
+        if (!fresh) return;
+        saveCachedBookmarks(fresh);
         currentBookmarks = fresh;
         fzhReady.then(() => loadFzhBookmarks(fresh));
-      } else if (JSON.stringify(fresh) !== JSON.stringify(cached)) {
-        // New data available — stash it and show reload indicator
-        pendingBookmarks = fresh;
-        showSyncIndicator();
-      }
-    }).catch(() => { /* offline — cache is fine */ });
+      }).catch(() => { /* offline */ });
+    }
+
+    startBackgroundRefresh();
 
     // Wire the loaded identity into the fzt session so the :whoami palette
     // leaf can emit it as a one-shot status on demand. Not rendered ambiently.
@@ -272,29 +273,102 @@ function showSyncIndicator() {
   dot.classList.remove("hidden");
 }
 
-// Manual re-fetch (from the `:sync` palette command). Mirrors the page-
-// load background-fetch logic but compares against currentBookmarks
-// rather than the initial `cached`, so it works after pendingBookmarks
-// has been applied at least once in the current session. Status flows
-// through fzt's title bar (the canonical fzt status surface) via
-// setFzhStatus — style 0 default, 1 green success, 2 red error, 3
-// neutral slate.
+// Manual re-fetch (from the `:sync` palette command): the automatic refresh
+// below, run now, with its outcome in fzt's title bar via setFzhStatus
+// (style 1 green success, 3 neutral slate).
 async function triggerManualSync() {
+  const result = await refreshFromServer();
+  if (result === "updated") setFzhStatus("Bookmarks updated", 1);
+  else if (result === "same") setFzhStatus("Up to date", 1);
+  else if (result === "failed") setFzhStatus("Offline — cache kept", 3);
+}
+
+// ── Automatic refresh ───────────────────────────────────────────
+// An open homepage picks up a bookmark edit made anywhere else (another tab,
+// another PC, a session's save) without a click: it re-reads the tree when
+// the tab comes back into view and every REFRESH_MS while it is visible, and
+// swaps a changed tree in as soon as the terminal is idle. While something
+// would be lost (a typed query, a scope, edit mode, the diff modal) the
+// change waits behind the sync dot and goes in the moment that ends.
+
+const REFRESH_MS = 30000;
+const IDLE_CHECK_MS = 1000;
+let refreshInFlight = false;
+let idleTimer = null;
+
+function startBackgroundRefresh() {
+  if (IS_BAKED) return;
+  setInterval(() => { if (!document.hidden) refreshFromServer(); }, REFRESH_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshFromServer(); });
+  window.addEventListener("focus", () => refreshFromServer());
+}
+
+// The tree as the server has it, or null on anything but a real answer, so a
+// lapsed session or an outage never reads as an empty list.
+async function fetchTreeStrict() {
   try {
-    const fresh = await fetchBookmarks();
-    if (!fresh) { setFzhStatus("No data returned", 2); return; }
-    saveCachedBookmarks(fresh);
-    const cur = currentBookmarks || [];
-    if (JSON.stringify(fresh) === JSON.stringify(cur)) {
-      setFzhStatus("Up to date", 1);
-      return;
-    }
-    pendingBookmarks = fresh;
-    setFzhStatus("New bookmarks found — click dot", 1);
-    showSyncIndicator();
+    const treeId = await bookmarksTreeId();
+    const res = await fetch(`${CONFIG.fztApiBase}/fzt/tree/${treeId}`, { headers: await authHeader() });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data.tree) ? data : null;
   } catch {
-    setFzhStatus("Offline — cache kept", 3);
+    return null;
   }
+}
+
+// Resolves to "updated", "same", "failed", or "skipped" (edit mode, signed
+// out, the baked deploy, or a read already in flight).
+async function refreshFromServer() {
+  // Edit mode holds the merge base (lastFetchedVersion/originalBookmarks)
+  // for its save; leave it alone until the save or cancel.
+  if (IS_BAKED || !userAuthenticated || editMode || refreshInFlight) return "skipped";
+  refreshInFlight = true;
+  try {
+    const data = await fetchTreeStrict();
+    if (!data) return "failed";
+    if (editMode) return "skipped";
+    // A save that landed while this read was in flight is newer than it.
+    if (lastFetchedVersion != null && data.version < lastFetchedVersion) return "same";
+    lastFetchedVersion = data.version;
+    originalBookmarks = deepClone(data.tree);
+    hideApiError();
+    saveCachedBookmarks(data.tree);
+    return offerFreshBookmarks(data.tree) ? "updated" : "same";
+  } finally {
+    refreshInFlight = false;
+  }
+}
+
+// Fresh data from the server: swapped in now if the terminal is idle,
+// otherwise held behind the dot and swapped in once it is. Returns whether it
+// differs from what is on screen.
+function offerFreshBookmarks(fresh) {
+  if (bookmarksEqual(fresh, currentBookmarks || [])) {
+    if (pendingBookmarks) {
+      pendingBookmarks = null;
+      const dot = document.getElementById("sync-indicator");
+      if (dot) dot.classList.add("hidden");
+    }
+    return false;
+  }
+  pendingBookmarks = fresh;
+  if (canApplyNow()) {
+    applySyncedBookmarks();
+    return true;
+  }
+  showSyncIndicator();
+  if (!idleTimer) {
+    idleTimer = setInterval(() => {
+      if (!pendingBookmarks) { clearInterval(idleTimer); idleTimer = null; return; }
+      if (canApplyNow()) applySyncedBookmarks();
+    }, IDLE_CHECK_MS);
+  }
+  return true;
+}
+
+function canApplyNow() {
+  return !editMode && !document.getElementById("sync-diff-overlay") && isFzhIdle();
 }
 
 function applySyncedBookmarks() {
@@ -1223,6 +1297,9 @@ function reRenderEdit() {
 // ── Edit mode: enter / save / cancel ────────────────────────────
 
 function enterEditMode() {
+  // Edits start from the newest tree: lastFetchedVersion already names it, so
+  // editing the older one on screen would overwrite it without a conflict.
+  if (pendingBookmarks) applySyncedBookmarks();
   // Edit mode uses the HTML tree — hide terminal, show tree
   showTree();
   editMode = true;

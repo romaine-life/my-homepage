@@ -141,3 +141,14 @@ export function sendKey(key, ctrlKey, shiftKey, altKey = false, metaKey = false)
 export function isTerminalReady() {
   return _term ? _term.isReady() : false;
 }
+
+// True while nothing typed or navigated would be lost by reloading the tree:
+// the search prompt is empty, unscoped, not in a prompt mode (Google search)
+// and not showing the `/` pop-up. Reloading reinitializes the session, which
+// resets the query, scope and cursor.
+export function isIdle() {
+  if (!_term || !_term.isReady()) return false;
+  const ps = _term.getPromptState();
+  if (!ps || ps instanceof Error) return false;
+  return ps.mode === "search" && !ps.query && !(ps.scopePath && ps.scopePath.length) && !ps.icon && !ps.keyPopup;
+}
