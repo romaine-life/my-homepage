@@ -105,7 +105,7 @@ After a save, `pendingBookmarks` is cleared and the indicator hidden to prevent 
 
 ## AT (fzt-automate) Convergence
 
-The `fzt-automate` binary and the homepage web app both consume fzt-terminal. AT reads local YAML menus + cloud-synced bookmarks (via file reference to a cache populated by `syncbookmarks`). The homepage reads from the API. Both share the same bookmark data in Azure Blob Storage — the ref system means shared folders (like a Google folder) appear in both AT and the browser. AT identity management (`:load`, `:setsecret`, `:syncbookmarks`, `:whoami`) lives in fzt's command palette, not the menu tree.
+The `fzt-automate` binary and the homepage web app both consume fzt-terminal, but they do not share bookmark data. The homepage reads `<sub>-bookmarks`; the at menu (`<sub>-menu`, read from fzt-automate's local cache) holds its own tagged copy of the bookmarks in its `links` folder, inline since the old `nelson-menu` v2 replaced its ref. A homepage bookmark edit therefore never reaches the at menu, and a bookmark commit starts no home-sync (AT-9 tracks making them one list; MYHO-2 tracks refreshing open lists on an edit). Sessions edit both trees with `menu-save` (`--bookmarks` for the homepage tree).
 
 ## Cosmos DB Direct Access
 
